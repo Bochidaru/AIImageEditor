@@ -47,7 +47,10 @@ class FluxFillEditor:
         return GenerationResult(
             image=np.asarray(output, dtype=np.uint8),
             seed=options.seed,
-            metadata={"backend": "flux_fill"},
+            metadata={
+                "backend": "flux_fill",
+                "quantization": self.config.options.get("quantization"),
+            },
         )
 
     def _load_pipeline(self):
@@ -58,9 +61,33 @@ class FluxFillEditor:
         from diffusers import FluxFillPipeline
 
         dtype = getattr(torch, self.device.dtype)
+        load_options: dict[str, Any] = {"torch_dtype": dtype}
+        quantization = self.config.options.get("quantization")
+
+        if quantization == "bitsandbytes_8bit":
+            from diffusers.quantizers import PipelineQuantizationConfig
+
+            components = self.config.options.get(
+                "quantization_components", ["transformer"]
+            )
+            if not isinstance(components, list) or not components:
+                raise ValueError(
+                    "quantization_components must be a non-empty list."
+                )
+
+            load_options["quantization_config"] = PipelineQuantizationConfig(
+                quant_backend="bitsandbytes_8bit",
+                quant_kwargs={"load_in_8bit": True},
+                components_to_quantize=components,
+            )
+        elif quantization is not None:
+            raise ValueError(
+                f"Unsupported Flux quantization mode: {quantization!r}."
+            )
+
         pipeline = FluxFillPipeline.from_pretrained(
             self.config.model_id,
-            torch_dtype=dtype,
+            **load_options,
         )
 
         if self.config.options.get("cpu_offload", False):
@@ -68,4 +95,3 @@ class FluxFillEditor:
         else:
             pipeline.to(self.device.name)
         return pipeline
-
