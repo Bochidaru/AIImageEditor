@@ -1,0 +1,39 @@
+device:
+  name: cuda
+  dtype: bfloat16
+
+models:
+  segmentation:
+    backend: sam2
+    model_id: facebook/sam2.1-hiera-base-plus
+    checkpoint: null
+    multimask_output: true
+
+  editing:
+    backend: flux_fill
+    model_id: black-forest-labs/FLUX.1-Fill-dev
+    checkpoint: null
+    cpu_offload: true
+    quantization: null
+
+memory:
+  policy: sequential
+  track_peak: true
+
+processing:
+  max_image_side: 2048
+  generation_max_side: 1024
+  crop_padding: 128
+  size_multiple: 16
+
+mask:
+  threshold: 127
+  dilate: 12
+  erode: 0
+  feather: 6
+
+generation:
+  seed: 42
+  num_inference_steps: 28
+  guidance_scale: null
+

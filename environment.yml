@@ -1,0 +1,25 @@
+name: imageinpaint
+
+channels:
+  - conda-forge
+  - defaults
+
+dependencies:
+  - python=3.12
+  - pip
+  - numpy
+  - pillow
+  - opencv
+  - pyyaml
+  - pytest
+  - jupyterlab
+  - ipywidgets
+  - ipykernel
+  - pip:
+      - torch==2.14.0
+      - torchvision==0.29.0
+      - diffusers
+      - transformers
+      - accelerate
+      - safetensors
+      - huggingface-hub

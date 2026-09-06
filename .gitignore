@@ -1,0 +1,14 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.env
+
+checkpoints/*
+!checkpoints/.gitkeep
+
+outputs/**
+!outputs/**/
+!outputs/**/.gitkeep
