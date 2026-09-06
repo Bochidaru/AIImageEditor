@@ -7,7 +7,7 @@ channels:
 dependencies:
   - python=3.12
   - pip
-  - numpy
+  - numpy=1.26.4
   - pillow
   - opencv
   - pyyaml
@@ -18,6 +18,7 @@ dependencies:
   - pip:
       - torch==2.14.0
       - torchvision==0.29.0
+      - scipy==1.16.3
       - diffusers
       - transformers
       - accelerate

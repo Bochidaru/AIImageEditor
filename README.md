@@ -11,8 +11,9 @@ The package keeps web frameworks out of the core. `ImageProcessor` is the public
 ## Setup
 
 ```powershell
-conda env create -f environment.yml
-conda activate image-editor
+conda env create -f environment.yml || conda env update -f environment.yml --prune
+conda activate imageinpaint
+pip install git+https://github.com/facebookresearch/sam2.git
 pip install -e . --no-deps
 pytest
 ```
