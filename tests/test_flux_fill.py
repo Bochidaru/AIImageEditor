@@ -4,7 +4,7 @@ from types import ModuleType, SimpleNamespace
 import pytest
 
 from inpaint_core.config import DeviceConfig, ModelConfig
-from inpaint_core.editing.flux_fill import FluxFillEditor
+from inpaint_core.backends.flux import FluxFillBackend
 from inpaint_core.models.manager import ModelManager
 
 
@@ -43,7 +43,7 @@ def install_fake_dependencies(monkeypatch):
 
 
 def make_editor(options):
-    return FluxFillEditor(
+    return FluxFillBackend(
         ModelConfig(
             backend="flux_fill",
             model_id="black-forest-labs/FLUX.1-Fill-dev",

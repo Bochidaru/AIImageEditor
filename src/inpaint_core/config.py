@@ -30,8 +30,6 @@ class MemoryConfig:
 @dataclass(slots=True)
 class ProcessingConfig:
     max_image_side: int = 2048
-    generation_max_side: int = 1024
-    crop_padding: int = 128
     size_multiple: int = 16
 
 
@@ -39,7 +37,11 @@ class ProcessingConfig:
 class AppConfig:
     device: DeviceConfig
     segmentation: ModelConfig
-    editing: ModelConfig
+    flux_fill: ModelConfig
+    flux_generation: ModelConfig
+    omnipaint: ModelConfig
+    flux_kontext: ModelConfig
+    upscaler: ModelConfig
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     processing: ProcessingConfig = field(default_factory=ProcessingConfig)
     mask_defaults: dict[str, Any] = field(default_factory=dict)
@@ -47,9 +49,16 @@ class AppConfig:
 
     @classmethod
     def from_yaml(cls, path: str | Path) -> "AppConfig":
-        with Path(path).open("r", encoding="utf-8") as stream:
+        config_path = Path(path).resolve()
+        with config_path.open("r", encoding="utf-8") as stream:
             payload = yaml.safe_load(stream) or {}
-        return cls.from_dict(payload)
+        config = cls.from_dict(payload)
+        source_path = config.omnipaint.options.get("source_path")
+        if source_path and not Path(source_path).expanduser().is_absolute():
+            config.omnipaint.options["source_path"] = str(
+                (config_path.parent / source_path).resolve()
+            )
+        return config
 
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "AppConfig":
@@ -57,7 +66,13 @@ class AppConfig:
         return cls(
             device=DeviceConfig(**payload.get("device", {})),
             segmentation=_model_config(models.get("segmentation", {})),
-            editing=_model_config(models.get("editing", {})),
+            flux_fill=_model_config(
+                models.get("flux_fill", models.get("editing", {}))
+            ),
+            flux_generation=_model_config(models.get("flux_generation", {})),
+            omnipaint=_model_config(models.get("omnipaint", {})),
+            flux_kontext=_model_config(models.get("flux_kontext", {})),
+            upscaler=_model_config(models.get("upscaler", {})),
             memory=MemoryConfig(**payload.get("memory", {})),
             processing=ProcessingConfig(**payload.get("processing", {})),
             mask_defaults=payload.get("mask", {}),
@@ -74,4 +89,3 @@ def _model_config(payload: dict[str, Any]) -> ModelConfig:
         checkpoint=payload.get("checkpoint"),
         options=options,
     )
-

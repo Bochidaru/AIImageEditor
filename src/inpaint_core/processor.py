@@ -2,243 +2,107 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .compositing import Compositor
+from .backends.flux import FluxFillBackend, FluxGeneratorBackend, FluxKontextBackend
+from .backends.omnipaint import OmniPaintBackend
+from .backends.protocols import ImageGenerator, MaskedEditor, ObjectRemover, PromptEditor, ReferenceInserter, Segmenter, Upscaler
+from .backends.segmentation import SAM2Segmenter
+from .backends.upscaling import RealESRGANBackend
 from .config import AppConfig
-from .editing import FluxFillEditor, MaskedImageEditor
-from .image import ImageSource, preprocess_image
-from .masks.operations import dilate, erode, invert, threshold, validate_mask
-from .masks.transforms import prepare_masked_crop, restore_crop
 from .models import MemoryTracker, ModelManager
-from .segmentation import SAM2Segmenter, Segmenter
-from .types import (
-    EditResult,
-    GenerationOptions,
-    ImageArray,
-    MaskArray,
-    MaskOptions,
-    SegmentationResult,
-    SelectionPrompt,
-)
+from .operations import BackgroundReplacementOperation, ImageGenerationOperation, ObjectInsertionOperation, ObjectRemovalOperation, ObjectReplacementOperation, OutpaintingOperation, PromptEditOperation, UpscalingOperation
+from .operations.common import OperationContext
+from .types import BoxPrompt, EditResult, GenerationOptions, GenerationResult, ImageArray, MaskArray, MaskOptions, OutpaintMargins, SegmentationResult, SelectionPrompt, UpscaleOptions
 
 
 class ImageProcessor:
-    """Framework-independent facade for segmentation-guided image editing."""
+    """Thin public facade over independent image-editing operations."""
 
     def __init__(
-        self,
-        *,
-        config: AppConfig,
-        segmenter: Segmenter,
-        editor: MaskedImageEditor,
+        self, *, config: AppConfig, segmenter: Segmenter,
+        flux_fill: MaskedEditor, omnipaint: ObjectRemover | ReferenceInserter,
+        flux_kontext: PromptEditor, generator: ImageGenerator, upscaler: Upscaler,
         model_manager: ModelManager | None = None,
-        compositor: Compositor | None = None,
         memory_tracker: MemoryTracker | None = None,
     ) -> None:
         self.config = config
-        self.segmenter = segmenter
-        self.editor = editor
         self.model_manager = model_manager or ModelManager(config.memory.policy)
-        self.compositor = compositor or Compositor()
-        self.memory_tracker = memory_tracker or MemoryTracker(
-            config.memory.track_peak
-        )
+        self.memory_tracker = memory_tracker or MemoryTracker(config.memory.track_peak)
+        self.segmenter = segmenter
+        context = OperationContext(config, segmenter, self.memory_tracker)
+        self._context = context
+        self._remove = ObjectRemovalOperation(context, omnipaint)
+        self._replace = ObjectReplacementOperation(context, flux_fill)
+        self._replace_background = BackgroundReplacementOperation(context, flux_fill)
+        self._insert = ObjectInsertionOperation(context, flux_fill, omnipaint)
+        self._prompt_edit = PromptEditOperation(context, flux_kontext)
+        self._generate = ImageGenerationOperation(context, generator)
+        self._outpaint = OutpaintingOperation(context, flux_fill)
+        self._upscale = UpscalingOperation(context, upscaler)
 
     @classmethod
     def from_config(cls, path: str | Path) -> "ImageProcessor":
         config = AppConfig.from_yaml(path)
+        cls._validate_backends(config)
         manager = ModelManager(config.memory.policy)
-        segmenter = SAM2Segmenter(config.segmentation, config.device, manager)
-        editor = FluxFillEditor(config.editing, config.device, manager)
         return cls(
             config=config,
-            segmenter=segmenter,
-            editor=editor,
+            segmenter=SAM2Segmenter(config.segmentation, config.device, manager),
+            flux_fill=FluxFillBackend(config.flux_fill, config.device, manager),
+            omnipaint=OmniPaintBackend(config.omnipaint, config.device, manager),
+            flux_kontext=FluxKontextBackend(config.flux_kontext, config.device, manager),
+            generator=FluxGeneratorBackend(config.flux_generation, config.device, manager),
+            upscaler=RealESRGANBackend(config.upscaler, config.device, manager),
             model_manager=manager,
         )
 
-    def segment(
-        self,
-        image: ImageSource,
-        selection: SelectionPrompt,
-    ) -> SegmentationResult:
-        image = preprocess_image(image)
-        if self.config.memory.policy == "sequential":
-            self.model_manager.release("flux_fill")
+    @staticmethod
+    def _validate_backends(config: AppConfig) -> None:
+        expected = {
+            "models.segmentation.backend": (config.segmentation.backend, "sam2"),
+            "models.flux_fill.backend": (config.flux_fill.backend, "flux_fill"),
+            "models.flux_generation.backend": (config.flux_generation.backend, "flux"),
+            "models.omnipaint.backend": (config.omnipaint.backend, "omnipaint"),
+            "models.flux_kontext.backend": (config.flux_kontext.backend, "flux_kontext"),
+            "models.upscaler.backend": (config.upscaler.backend, "realesrgan"),
+        }
+        for field, (actual, wanted) in expected.items():
+            if actual != wanted:
+                raise ValueError(f"{field} must be {wanted!r}, got {actual!r}.")
+
+    def segment(self, image: ImageArray, selection: SelectionPrompt) -> SegmentationResult:
+        self._context.validate_image(image)
         with self.memory_tracker.measure("segmentation"):
             return self.segmenter.segment(image, selection)
 
-    def remove_object(
-        self,
-        image: ImageSource,
-        *,
-        selection: SelectionPrompt | None = None,
-        mask: MaskArray | None = None,
-        mask_options: MaskOptions | None = None,
-        generation_options: GenerationOptions | None = None,
-    ) -> EditResult:
-        return self._run_masked_edit(
-            mode="object_removal",
-            image=image,
-            selection=selection,
-            mask=mask,
-            prompt=(
-                "Remove the selected object and reconstruct the natural "
-                "background, matching surrounding texture, lighting, and perspective."
-            ),
-            invert_selection=False,
-            mask_options=mask_options,
-            generation_options=generation_options,
-        )
+    def remove_object(self, image: ImageArray, *, selection: SelectionPrompt | None = None, mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
+        return self._remove.run(image, selection=selection, mask=mask, mask_options=mask_options, generation_options=generation_options)
 
-    def replace_object(
-        self,
-        image: ImageSource,
-        prompt: str,
-        *,
-        selection: SelectionPrompt | None = None,
-        mask: MaskArray | None = None,
-        mask_options: MaskOptions | None = None,
-        generation_options: GenerationOptions | None = None,
-    ) -> EditResult:
-        if not prompt.strip():
-            raise ValueError("A replacement prompt is required.")
-        return self._run_masked_edit(
-            mode="object_replacement",
-            image=image,
-            selection=selection,
-            mask=mask,
-            prompt=prompt,
-            invert_selection=False,
-            mask_options=mask_options,
-            generation_options=generation_options,
-        )
+    def replace_object(self, image: ImageArray, prompt: str, *, selection: SelectionPrompt | None = None, mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
+        return self._replace.run(image, prompt, selection=selection, mask=mask, mask_options=mask_options, generation_options=generation_options)
 
-    def replace_background(
-        self,
-        image: ImageSource,
-        prompt: str,
-        *,
-        foreground_selection: SelectionPrompt | None = None,
-        foreground_mask: MaskArray | None = None,
-        mask_options: MaskOptions | None = None,
-        generation_options: GenerationOptions | None = None,
-    ) -> EditResult:
-        if not prompt.strip():
-            raise ValueError("A background prompt is required.")
-        return self._run_masked_edit(
-            mode="background_replacement",
-            image=image,
-            selection=foreground_selection,
-            mask=foreground_mask,
-            prompt=prompt,
-            invert_selection=True,
-            mask_options=mask_options,
-            generation_options=generation_options,
-        )
+    def replace_background(self, image: ImageArray, prompt: str, *, foreground_selection: SelectionPrompt | None = None, foreground_mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
+        return self._replace_background.run(image, prompt, foreground_selection=foreground_selection, foreground_mask=foreground_mask, mask_options=mask_options, generation_options=generation_options)
 
-    def _run_masked_edit(
-        self,
-        *,
-        mode: str,
-        image: ImageSource,
-        selection: SelectionPrompt | None,
-        mask: MaskArray | None,
-        prompt: str,
-        invert_selection: bool,
-        mask_options: MaskOptions | None,
-        generation_options: GenerationOptions | None,
-    ) -> EditResult:
-        image = preprocess_image(image)
-        mask_options = mask_options or self._default_mask_options()
-        generation_options = generation_options or self._default_generation_options()
+    def add_object_by_prompt(self, image: ImageArray, prompt: str, *, placement: BoxPrompt | None = None, mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
+        return self._insert.by_prompt(image, prompt, placement=placement, mask=mask, mask_options=mask_options, generation_options=generation_options)
 
-        raw_mask = self._resolve_mask(image, selection, mask, mask_options)
-        edit_mask = invert(raw_mask) if invert_selection else threshold(
-            raw_mask, mask_options.threshold
-        )
-        edit_mask = dilate(edit_mask, mask_options.dilate)
-        edit_mask = erode(edit_mask, mask_options.erode)
-        validate_mask(edit_mask, image.shape)
+    def add_object_by_reference(self, image: ImageArray, reference: ImageArray, *, placement: BoxPrompt | None = None, mask: MaskArray | None = None, reference_mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
+        return self._insert.by_reference(image, reference, placement=placement, mask=mask, reference_mask=reference_mask, mask_options=mask_options, generation_options=generation_options)
 
-        prepared = prepare_masked_crop(
-            image,
-            edit_mask,
-            padding=mask_options.crop_padding,
-            max_side=self.config.processing.generation_max_side,
-            size_multiple=self.config.processing.size_multiple,
-        )
+    def prompt_edit(self, image: ImageArray, prompt: str, *, generation_options: GenerationOptions | None = None) -> GenerationResult:
+        return self._prompt_edit.run(image, prompt, generation_options)
 
-        if self.config.memory.policy == "sequential":
-            self.model_manager.release("sam2")
-        with self.memory_tracker.measure("generation"):
-            generated_crop = self.editor.edit(
-                prepared.image,
-                prepared.mask,
-                prompt,
-                generation_options,
-            )
+    def generate_image(self, prompt: str, *, width: int = 1024, height: int = 1024, generation_options: GenerationOptions | None = None) -> GenerationResult:
+        return self._generate.run(prompt, width=width, height=height, generation_options=generation_options)
 
-        generated_full = restore_crop(
-            image,
-            generated_crop.image,
-            prepared.transform,
-        )
-        final = self.compositor.compose(
-            image,
-            generated_full,
-            edit_mask,
-            feather_radius=mask_options.feather,
-        )
+    def outpaint(self, image: ImageArray, prompt: str, margins: OutpaintMargins, *, generation_options: GenerationOptions | None = None) -> EditResult:
+        return self._outpaint.run(image, prompt, margins, generation_options=generation_options)
 
-        return EditResult(
-            image=final,
-            mask=edit_mask,
-            generated_image=generated_full,
-            metadata={
-                "mode": mode,
-                "seed": generated_crop.seed,
-                "stages": self.memory_tracker.results.copy(),
-                **generated_crop.metadata,
-            },
-        )
+    def upscale(self, image: ImageArray, *, options: UpscaleOptions | None = None) -> GenerationResult:
+        return self._upscale.run(image, options)
 
-    def _resolve_mask(
-        self,
-        image: ImageArray,
-        selection: SelectionPrompt | None,
-        mask: MaskArray | None,
-        options: MaskOptions,
-    ) -> MaskArray:
-        if (selection is None) == (mask is None):
-            raise ValueError("Provide exactly one of selection or mask.")
-        if mask is not None:
-            validate_mask(mask, image.shape)
-            return threshold(mask, options.threshold)
+    def release_models(self) -> None:
+        self.model_manager.release_all()
 
-        segmentation = self.segment(image, selection)
-        index = (
-            segmentation.best_index
-            if options.candidate_index is None
-            else options.candidate_index
-        )
-        if not 0 <= index < len(segmentation.masks):
-            raise IndexError("candidate_index is outside the returned mask list.")
-        return threshold(segmentation.masks[index], options.threshold)
-
-    def _default_mask_options(self) -> MaskOptions:
-        allowed = MaskOptions.__dataclass_fields__.keys()
-        values = {
-            key: value
-            for key, value in self.config.mask_defaults.items()
-            if key in allowed
-        }
-        return MaskOptions(**values)
-
-    def _default_generation_options(self) -> GenerationOptions:
-        allowed = GenerationOptions.__dataclass_fields__.keys()
-        values = {
-            key: value
-            for key, value in self.config.generation_defaults.items()
-            if key in allowed
-        }
-        return GenerationOptions(**values)
+    def save_memory_stats(self, path: str | Path) -> Path:
+        return self.memory_tracker.save_json(path)

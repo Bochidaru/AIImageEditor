@@ -44,8 +44,6 @@ class MaskOptions:
     threshold: int = 127
     dilate: int = 0
     erode: int = 0
-    feather: int = 6
-    crop_padding: int = 128
     candidate_index: int | None = None
 
 
@@ -54,6 +52,33 @@ class GenerationOptions:
     seed: int = 42
     num_inference_steps: int = 28
     guidance_scale: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class OutpaintMargins:
+    left: int = 0
+    top: int = 0
+    right: int = 0
+    bottom: int = 0
+
+    def __post_init__(self) -> None:
+        if min(self.left, self.top, self.right, self.bottom) < 0:
+            raise ValueError("Outpaint margins cannot be negative.")
+        if self.left + self.top + self.right + self.bottom == 0:
+            raise ValueError("At least one outpaint margin must be positive.")
+
+
+@dataclass(slots=True)
+class UpscaleOptions:
+    scale: int = 4
+    face_enhance: bool = False
+    tile: int = 0
+    tile_pad: int = 10
+    pre_pad: int = 0
+
+    def __post_init__(self) -> None:
+        if self.scale <= 0:
+            raise ValueError("Upscale scale must be greater than zero.")
 
 
 @dataclass(slots=True)
@@ -86,17 +111,13 @@ class EditResult:
 
 
 @dataclass(frozen=True, slots=True)
-class CropTransform:
-    crop_box: tuple[int, int, int, int]
-    crop_size: tuple[int, int]
-    processing_size: tuple[int, int]
+class ImageTransform:
+    image_size: tuple[int, int]
     padding: tuple[int, int, int, int]
-    original_size: tuple[int, int]
 
 
 @dataclass(slots=True)
-class PreparedCrop:
+class PreparedImage:
     image: ImageArray
     mask: MaskArray
-    transform: CropTransform
-
+    transform: ImageTransform

@@ -8,32 +8,58 @@ models:
     model_id: facebook/sam2.1-hiera-base-plus
     checkpoint: null
     multimask_output: true
-
-  editing:
+  flux_fill:
     backend: flux_fill
     model_id: black-forest-labs/FLUX.1-Fill-dev
     checkpoint: null
     cpu_offload: true
-    quantization: bitsandbytes_8bit
-    quantization_components:
-      - transformer
+    quantization: null
+    quantization_components: [transformer]
+  # Pure text-to-image needs base FLUX; FLUX Fill is a masked editor.
+  flux_generation:
+    backend: flux
+    model_id: black-forest-labs/FLUX.1-dev
+    checkpoint: null
+    cpu_offload: true
+    quantization: null
+  omnipaint:
+    backend: omnipaint
+    model_id: yeates/OmniPaint
+    checkpoint: null
+    base_model_id: black-forest-labs/FLUX.1-dev
+    source_path: ../third_party/OmniPaint
+    cpu_offload: true
+    reference_size: 512
+    reference_position_delta: [0, -32]
+    removal_lora: weights/omnipaint_remove.safetensors
+    insertion_lora: weights/omnipaint_insert.safetensors
+    removal_embedding: embeddings/remove.npz
+    insertion_embedding: embeddings/insert.npz
+  flux_kontext:
+    backend: flux_kontext
+    model_id: black-forest-labs/FLUX.1-Kontext-dev
+    checkpoint: null
+    cpu_offload: true
+    quantization: null
+  upscaler:
+    backend: realesrgan
+    model_id: RealESRGAN_x4plus
+    checkpoint: null
+    native_scale: 4
+    tile: 0
+    tile_pad: 10
+    pre_pad: 0
 
 memory:
   policy: sequential
   track_peak: true
-
 processing:
-  max_image_side: 2048
-  generation_max_side: 1024
-  crop_padding: 128
+  max_image_side: 1024
   size_multiple: 16
-
 mask:
   threshold: 127
   dilate: 12
   erode: 0
-  feather: 6
-
 generation:
   seed: 42
   num_inference_steps: 28

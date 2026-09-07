@@ -3,35 +3,68 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TypeAlias
 
+import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-from .types import ImageArray
+from .types import BoxPrompt, ImageArray, PointPrompt, SelectionPrompt
 
 ImageSource: TypeAlias = str | Path | Image.Image | np.ndarray
 
 
-def preprocess_image(
+def preprocess_image_only(
     source: ImageSource,
     *,
     color_space: str = "rgb",
     alpha_background: tuple[int, int, int] = (255, 255, 255),
+    max_side: int | None = None,
 ) -> ImageArray:
-    """Convert a path, PIL image, or NumPy array to contiguous RGB uint8."""
+    """Normalize an image for modes that do not use a point or box selection."""
     _validate_color_space(color_space)
     _validate_background(alpha_background)
-
+    if max_side is not None and max_side <= 0:
+        raise ValueError("max_side must be greater than zero.")
     if isinstance(source, (str, Path)):
         with Image.open(source) as image:
-            return _from_pil(image, alpha_background)
+            result = _from_pil(image, alpha_background)
+    elif isinstance(source, Image.Image):
+        result = _from_pil(source, alpha_background)
+    elif isinstance(source, np.ndarray):
+        result = _from_numpy(source, color_space, alpha_background)
+    else:
+        raise TypeError("Image source must be a path, PIL image, or NumPy array.")
+    return _resize_to_max_side(result, max_side)
 
-    if isinstance(source, Image.Image):
-        return _from_pil(source, alpha_background)
 
-    if isinstance(source, np.ndarray):
-        return _from_numpy(source, color_space, alpha_background)
+def preprocess_image(
+    source: ImageSource,
+    selection: SelectionPrompt,
+    *,
+    color_space: str = "rgb",
+    alpha_background: tuple[int, int, int] = (255, 255, 255),
+    max_side: int | None = None,
+) -> tuple[ImageArray, SelectionPrompt]:
+    """Normalize an image and scale its required selection with the image."""
+    _validate_color_space(color_space)
+    _validate_background(alpha_background)
+    if max_side is not None and max_side <= 0:
+        raise ValueError("max_side must be greater than zero.")
 
-    raise TypeError("Image source must be a path, PIL image, or NumPy array.")
+    result = preprocess_image_only(
+        source,
+        color_space=color_space,
+        alpha_background=alpha_background,
+        max_side=None,
+    )
+
+    original_size = result.shape[:2]
+    result = _resize_to_max_side(result, max_side)
+    resized_selection = _resize_selection(
+        selection,
+        original_size=original_size,
+        resized_size=result.shape[:2],
+    )
+    return result, resized_selection
 
 
 def validate_image(image: ImageArray) -> None:
@@ -104,6 +137,52 @@ def _to_uint8(image: np.ndarray) -> np.ndarray:
     return np.clip(image, 0, 255).astype(np.uint8)
 
 
+def _resize_to_max_side(image: ImageArray, max_side: int | None) -> ImageArray:
+    if max_side is None:
+        return image
+
+    height, width = image.shape[:2]
+    longest_side = max(height, width)
+    if longest_side <= max_side:
+        return image
+
+    scale = max_side / longest_side
+    resized_height = max(1, round(height * scale))
+    resized_width = max(1, round(width * scale))
+    resized = cv2.resize(
+        image,
+        (resized_width, resized_height),
+        interpolation=cv2.INTER_AREA,
+    )
+    return np.ascontiguousarray(resized, dtype=np.uint8)
+
+
+def _resize_selection(
+    selection: SelectionPrompt,
+    *,
+    original_size: tuple[int, int],
+    resized_size: tuple[int, int],
+) -> SelectionPrompt:
+    original_height, original_width = original_size
+    resized_height, resized_width = resized_size
+    scale_x = resized_width / original_width
+    scale_y = resized_height / original_height
+
+    if isinstance(selection, PointPrompt):
+        return PointPrompt(
+            points=[(x * scale_x, y * scale_y) for x, y in selection.points],
+            labels=selection.labels.copy(),
+        )
+    if isinstance(selection, BoxPrompt):
+        return BoxPrompt(
+            x1=selection.x1 * scale_x,
+            y1=selection.y1 * scale_y,
+            x2=selection.x2 * scale_x,
+            y2=selection.y2 * scale_y,
+        )
+    raise TypeError("selection must be a PointPrompt or BoxPrompt.")
+
+
 def _validate_color_space(color_space: str) -> None:
     if color_space not in {"rgb", "bgr"}:
         raise ValueError("color_space must be 'rgb' or 'bgr'.")
@@ -112,4 +191,3 @@ def _validate_color_space(color_space: str) -> None:
 def _validate_background(background: tuple[int, int, int]) -> None:
     if len(background) != 3 or any(not 0 <= value <= 255 for value in background):
         raise ValueError("alpha_background must contain three values in [0, 255].")
-

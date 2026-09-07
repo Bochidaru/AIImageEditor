@@ -19,9 +19,16 @@ dependencies:
       - torch==2.14.0
       - torchvision==0.29.0
       - scipy==1.16.3
-      - diffusers
+      - diffusers==0.35.1
       - bitsandbytes
-      - transformers
+      - transformers>=4.41,<5
       - accelerate
+      - peft
       - safetensors
       - huggingface-hub
+      - sentencepiece
+      - realesrgan
+      - basicsr
+      - facexlib
+      - gfpgan
+      - einops

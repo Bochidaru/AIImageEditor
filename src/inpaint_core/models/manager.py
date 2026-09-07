@@ -23,6 +23,8 @@ class ModelManager:
 
     def get(self, name: str, loader: Callable[[], Any]) -> Any:
         if name not in self._models:
+            if self.memory_policy == "sequential":
+                self.release_all()
             self._models[name] = loader()
         return self._models[name]
 
@@ -50,4 +52,3 @@ class ModelManager:
                 torch.cuda.empty_cache()
         except ImportError:
             pass
-

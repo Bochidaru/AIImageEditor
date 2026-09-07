@@ -6,7 +6,7 @@ import numpy as np
 
 from inpaint_core.config import DeviceConfig, ModelConfig
 from inpaint_core.models.manager import ModelManager
-from inpaint_core.segmentation.sam2 import SAM2Segmenter
+from inpaint_core.backends.segmentation import SAM2Segmenter
 from inpaint_core.types import BoxPrompt, PointPrompt
 
 

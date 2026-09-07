@@ -1,5 +1,5 @@
 from .config import AppConfig
-from .image import ImageSource, preprocess_image, validate_image
+from .image import ImageSource, preprocess_image, preprocess_image_only, validate_image
 from .processor import ImageProcessor
 from .types import (
     BoxPrompt,
@@ -7,8 +7,10 @@ from .types import (
     GenerationOptions,
     GenerationResult,
     MaskOptions,
+    OutpaintMargins,
     PointPrompt,
     SegmentationResult,
+    UpscaleOptions,
 )
 
 __all__ = [
@@ -20,8 +22,11 @@ __all__ = [
     "ImageProcessor",
     "ImageSource",
     "MaskOptions",
+    "OutpaintMargins",
     "PointPrompt",
     "SegmentationResult",
+    "UpscaleOptions",
     "preprocess_image",
+    "preprocess_image_only",
     "validate_image",
 ]

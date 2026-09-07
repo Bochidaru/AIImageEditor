@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+third_party/OmniPaint/
 .pytest_cache/
 .ruff_cache/
 .ipynb_checkpoints/
