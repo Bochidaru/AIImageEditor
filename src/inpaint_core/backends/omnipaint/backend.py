@@ -127,7 +127,6 @@ class OmniPaintBackend:
 
         import torch
         from diffusers import FluxPipeline
-        from huggingface_hub import hf_hub_download
 
         dtype = getattr(torch, self.device.dtype)
         pipeline = FluxPipeline.from_pretrained(
@@ -151,7 +150,20 @@ class OmniPaintBackend:
                 weight_name=lora_name,
                 adapter_name=task,
             )
-            embedding_path = hf_hub_download(self.config.model_id, embedding_name)
+            model_path = Path(self.config.model_id).expanduser()
+            if model_path.is_dir():
+                embedding_path = model_path / embedding_name
+                if not embedding_path.is_file():
+                    raise FileNotFoundError(
+                        f"OmniPaint embedding not found: {embedding_path}"
+                    )
+            else:
+                from huggingface_hub import hf_hub_download
+
+                embedding_path = hf_hub_download(
+                    self.config.model_id,
+                    embedding_name,
+                )
             embeddings[task] = self._load_embeddings(embedding_path, torch, dtype)
 
         if self.config.options.get("cpu_offload", True):

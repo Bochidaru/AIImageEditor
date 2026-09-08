@@ -1,7 +1,7 @@
 # ImageEditor
 
-An extensible image-editing core with a thin `ImageProcessor` facade. The
-project deliberately separates business operations from model-specific code.
+An extensible image-editing core with a thin `ImageProcessor` facade. Business
+operations are separated from model-specific code.
 
 ## Architecture
 
@@ -24,10 +24,10 @@ ImageProcessor
 classes. Backends do not inherit from them. This keeps operations replaceable
 and easy to unit-test with fake implementations.
 
-Masked diffusion always receives the complete preprocessed image, padded to a
-multiple of `processing.size_multiple`. Cropping and automatic preprocessing
-inside `ImageProcessor` are disabled. Compositing is also disabled: masked
-operations return the model's complete generated image after padding is removed.
+Masked diffusion receives the complete preprocessed image, padded to a multiple
+of `processing.size_multiple`. Cropping and automatic preprocessing inside
+`ImageProcessor` are disabled. Compositing is also disabled: masked operations
+return the model's complete generated image after padding is removed.
 
 ## Setup
 
@@ -36,17 +36,50 @@ conda env create -f environment.yml
 conda activate imageinpaint
 pip install -e .
 pip install git+https://github.com/facebookresearch/sam2.git
-python scripts/install_omnipaint.py
+python scripts/check_environment.py --require-cuda
 ```
 
-FLUX and OmniPaint repositories may require Hugging Face access approval and
-an authenticated `HF_TOKEN`. `scripts/install_omnipaint.py` installs the
-official custom inference runtime; OmniPaint is not a drop-in Diffusers LoRA.
+The official OmniPaint repository is already stored at
+`third_party/OmniPaint`, so no additional clone/install script is needed. FLUX
+and OmniPaint repositories may require Hugging Face access approval and an
+authenticated `HF_TOKEN`.
 
-## Public API
+Do **not** run `third_party/OmniPaint/scripts/setup.sh` inside this environment.
+That upstream script pins Diffusers 0.31 and PEFT 0.10, while this project uses
+Diffusers 0.35.1 for `FluxKontextPipeline`. `environment.yml` instead pins one
+compatibility set for both integrations, and `check_environment.py` verifies
+the exact APIs after installation. NumPy, SciPy, and OpenCV are
+kept on Conda Forge to avoid mixing incompatible compiled wheels.
+
+If the environment already exists, create a clean comparison environment rather
+than upgrading the old one in place:
+
+```bash
+conda env create -f environment.yml -n imageinpaint-v2
+conda activate imageinpaint-v2
+pip install -e .
+pip install git+https://github.com/facebookresearch/sam2.git
+python scripts/check_environment.py --require-cuda
+```
+
+With `artifacts.prefetch_on_init: true`, `ImageProcessor.from_config()` first
+downloads every configured checkpoint to the local Hugging Face cache and
+Real-ESRGAN to `weights/`. It does not construct pipelines or move weights to
+RAM/GPU yet. The first operation using a backend performs that separate load.
+
+## Notebook examples
+
+Run the setup cell once. It prepares the input and obtains one reusable object
+mask with SAM2. The eight operation cells below assume this cell has run.
+
+### Setup cell
 
 ```python
 from pathlib import Path
+
+from IPython.display import display
+from PIL import Image
+
 from inpaint_core import (
     BoxPrompt,
     ImageProcessor,
@@ -61,47 +94,166 @@ root = Path.cwd()
 if root.name == "notebooks":
     root = root.parent
 
-processor = ImageProcessor.from_config(root / "configs/default.yaml")
-selection = PointPrompt(points=[(480, 641)], labels=[1])
+processor = ImageProcessor.from_config(root / "configs" / "default.yaml")
+
+raw_image = preprocess_image_only(root / "assets" / "cat.jpg")
+selection = PointPrompt(
+    points=[(raw_image.shape[1] / 2, raw_image.shape[0] / 2)],
+    labels=[1],
+)
 image, selection = preprocess_image(
-    root / "assets/cat.jpg",
+    raw_image,
     selection,
     max_side=processor.config.processing.max_image_side,
 )
 
-removed = processor.remove_object(image, selection=selection)
-replaced = processor.replace_object(image, "a golden retriever", selection=selection)
+segmentation = processor.segment(image, selection)
+object_mask = segmentation.best_mask
+
+output_dir = root / "outputs" / "notebook"
+output_dir.mkdir(parents=True, exist_ok=True)
+
+
+def show_and_save(result, filename):
+    output_path = output_dir / filename
+    Image.fromarray(result.image).save(output_path)
+    display(Image.fromarray(result.image))
+    print(output_path)
+
+
+display(Image.fromarray(image))
+display(Image.fromarray(object_mask))
+```
+
+### Cell 1 — Object Removal · OmniPaint
+
+```python
+removed = processor.remove_object(
+    image,
+    mask=object_mask,
+)
+show_and_save(removed, "01-object-removal.png")
+```
+
+### Cell 2 — Object Replacement · FLUX Fill
+
+```python
+replaced = processor.replace_object(
+    image,
+    "a golden retriever sitting in the same position",
+    mask=object_mask,
+)
+show_and_save(replaced, "02-object-replacement.png")
+```
+
+### Cell 3 — Background Replacement · FLUX Fill
+
+```python
 background = processor.replace_background(
-    image, "a quiet beach at sunset", foreground_selection=selection
+    image,
+    "a quiet tropical beach at sunset, realistic photography",
+    foreground_mask=object_mask,
+)
+show_and_save(background, "03-background-replacement.png")
+```
+
+### Cell 4 — Add Object · Prompt hoặc Reference Image
+
+Add by prompt uses FLUX Fill:
+
+```python
+placement = BoxPrompt(
+    x1=image.shape[1] * 0.05,
+    y1=image.shape[0] * 0.55,
+    x2=image.shape[1] * 0.30,
+    y2=image.shape[0] * 0.90,
 )
 
 inserted_prompt = processor.add_object_by_prompt(
-    image, "a red ball", placement=BoxPrompt(50, 50, 250, 250)
+    image,
+    "a small red ball resting naturally on the ground",
+    placement=placement,
 )
+show_and_save(inserted_prompt, "04a-add-object-prompt.png")
+```
 
-reference = preprocess_image_only(root / "assets/reference.png", max_side=512)
+Add by reference uses OmniPaint. Replace `assets/cat2.jpg` with another
+reference image when needed:
+
+```python
+raw_reference = preprocess_image_only(root / "assets" / "cat2.jpg")
+reference_selection = PointPrompt(
+    points=[(raw_reference.shape[1] / 2, raw_reference.shape[0] / 2)],
+    labels=[1],
+)
+reference, reference_selection = preprocess_image(
+    raw_reference,
+    reference_selection,
+    max_side=512,
+)
+reference_mask = processor.segment(reference, reference_selection).best_mask
+
 inserted_reference = processor.add_object_by_reference(
     image,
     reference,
-    placement=BoxPrompt(50, 50, 250, 250),
+    placement=placement,
+    reference_mask=reference_mask,
 )
+show_and_save(inserted_reference, "04b-add-object-reference.png")
+```
 
-edited = processor.prompt_edit(image, "Turn the scene into winter")
-generated = processor.generate_image("A cinematic mountain lake", width=1024, height=1024)
+### Cell 5 — Prompt Edit · FLUX Kontext
+
+```python
+edited = processor.prompt_edit(
+    image,
+    "Turn the scene into winter while preserving the composition",
+)
+show_and_save(edited, "05-prompt-edit.png")
+```
+
+### Cell 6 — Generate Image · FLUX.1-dev
+
+```python
+generated = processor.generate_image(
+    "A cinematic mountain lake at sunrise, realistic photography",
+    width=1024,
+    height=1024,
+)
+show_and_save(generated, "06-generate-image.png")
+```
+
+### Cell 7 — Outpainting · FLUX Fill
+
+```python
 extended = processor.outpaint(
     image,
-    "Continue the scene naturally",
+    "Continue the original scene naturally on both sides",
     OutpaintMargins(left=128, right=128),
 )
-upscaled = processor.upscale(image, options=UpscaleOptions(scale=4, tile=512))
+show_and_save(extended, "07-outpaint.png")
+```
 
-processor.save_memory_stats(root / "outputs/memory.json")
+### Cell 8 — Upscaling · Real-ESRGAN
+
+```python
+upscaled = processor.upscale(
+    image,
+    options=UpscaleOptions(scale=4, tile=512),
+)
+show_and_save(upscaled, "08-upscale.png")
+```
+
+Optional cleanup and memory report:
+
+```python
+processor.save_memory_stats(root / "outputs" / "memory.json")
 processor.release_models()
 ```
 
-For reference insertion, pass `reference_mask=` when the reference still has a
-background. The core turns pixels outside that mask white before OmniPaint sees
-the subject. Placement should preferably be one connected mask/box.
+For reference insertion, `reference_mask` removes the reference background
+before OmniPaint receives the subject. Placement should preferably be one
+connected mask or box.
 
 ## Memory policy
 
@@ -117,11 +269,11 @@ lifetime, but does not know how Diffusers, SAM2, or Real-ESRGAN perform inferenc
 python -m pytest -q
 ```
 
-Unit tests use fake backends and therefore do not download checkpoints. Real GPU
-inference should be tested one mode at a time with `memory.policy: sequential`.
+Unit tests use fake backends and do not download checkpoints. Real GPU inference
+should be tested one mode at a time with `memory.policy: sequential`.
 
 ```bash
 python scripts/smoke_test.py --mode segment
 python scripts/smoke_test.py --mode remove
-python scripts/smoke_test.py --mode all --reference assets/reference.png
+python scripts/smoke_test.py --mode all --reference assets/cat2.jpg
 ```

@@ -34,6 +34,13 @@ class ProcessingConfig:
 
 
 @dataclass(slots=True)
+class ArtifactConfig:
+    prefetch_on_init: bool = True
+    cache_dir: str | None = None
+    weights_dir: str = "weights"
+
+
+@dataclass(slots=True)
 class AppConfig:
     device: DeviceConfig
     segmentation: ModelConfig
@@ -42,6 +49,7 @@ class AppConfig:
     omnipaint: ModelConfig
     flux_kontext: ModelConfig
     upscaler: ModelConfig
+    artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
     processing: ProcessingConfig = field(default_factory=ProcessingConfig)
     mask_defaults: dict[str, Any] = field(default_factory=dict)
@@ -58,6 +66,14 @@ class AppConfig:
             config.omnipaint.options["source_path"] = str(
                 (config_path.parent / source_path).resolve()
             )
+        for field_name in ("cache_dir", "weights_dir"):
+            value = getattr(config.artifacts, field_name)
+            if value and not Path(value).expanduser().is_absolute():
+                setattr(
+                    config.artifacts,
+                    field_name,
+                    str((config_path.parent / value).resolve()),
+                )
         return config
 
     @classmethod
@@ -73,6 +89,7 @@ class AppConfig:
             omnipaint=_model_config(models.get("omnipaint", {})),
             flux_kontext=_model_config(models.get("flux_kontext", {})),
             upscaler=_model_config(models.get("upscaler", {})),
+            artifacts=ArtifactConfig(**payload.get("artifacts", {})),
             memory=MemoryConfig(**payload.get("memory", {})),
             processing=ProcessingConfig(**payload.get("processing", {})),
             mask_defaults=payload.get("mask", {}),

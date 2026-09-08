@@ -8,7 +8,7 @@ from .backends.protocols import ImageGenerator, MaskedEditor, ObjectRemover, Pro
 from .backends.segmentation import SAM2Segmenter
 from .backends.upscaling import RealESRGANBackend
 from .config import AppConfig
-from .models import MemoryTracker, ModelManager
+from .models import MemoryTracker, ModelManager, prefetch_model_assets
 from .operations import BackgroundReplacementOperation, ImageGenerationOperation, ObjectInsertionOperation, ObjectRemovalOperation, ObjectReplacementOperation, OutpaintingOperation, PromptEditOperation, UpscalingOperation
 from .operations.common import OperationContext
 from .types import BoxPrompt, EditResult, GenerationOptions, GenerationResult, ImageArray, MaskArray, MaskOptions, OutpaintMargins, SegmentationResult, SelectionPrompt, UpscaleOptions
@@ -43,6 +43,8 @@ class ImageProcessor:
     def from_config(cls, path: str | Path) -> "ImageProcessor":
         config = AppConfig.from_yaml(path)
         cls._validate_backends(config)
+        if config.artifacts.prefetch_on_init:
+            prefetch_model_assets(config)
         manager = ModelManager(config.memory.policy)
         return cls(
             config=config,

@@ -50,11 +50,17 @@ models:
     tile_pad: 10
     pre_pad: 0
 
+artifacts:
+  # from_config() downloads files now; operations only load them into memory.
+  prefetch_on_init: true
+  cache_dir: null
+  weights_dir: ../weights
+
 memory:
   policy: sequential
   track_peak: true
 processing:
-  max_image_side: 1024
+  max_image_side: 2048
   size_multiple: 16
 mask:
   threshold: 127
