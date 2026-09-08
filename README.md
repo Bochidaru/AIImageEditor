@@ -143,9 +143,24 @@ show_and_save(replaced, "02-object-replacement.png")
 ```python
 background = processor.replace_background(
     image,
-    "a quiet tropical beach at sunset, realistic photography",
+    (
+        "A realistic photograph of a tabby cat sitting inside a busy modern "
+        "office, surrounded by office desks, computer monitors, chairs and "
+        "workers in the distance, natural indoor lighting, coherent perspective"
+    ),
     foreground_mask=object_mask,
+    mask_options=MaskOptions(
+        threshold=127,
+        dilate=0,
+        erode=2,
+    ),
+    generation_options=GenerationOptions(
+        seed=123,
+        num_inference_steps=50,
+        guidance_scale=30.0,
+    ),
 )
+
 show_and_save(background, "03-background-replacement.png")
 ```
 

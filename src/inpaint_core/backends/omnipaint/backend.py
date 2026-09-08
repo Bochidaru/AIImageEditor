@@ -29,6 +29,18 @@ class _Runtime:
     embeddings: dict[str, tuple[Any, Any, Any]]
 
 
+@dataclass(slots=True)
+class _EncodedCondition:
+    """Condition tensors cached before OmniPaint's custom denoising loop."""
+
+    condition_type: str
+    encoded: tuple[Any, Any, Any]
+
+    def encode(self, pipeline: Any) -> tuple[Any, Any, Any]:
+        del pipeline
+        return self.encoded
+
+
 class OmniPaintBackend:
     RESOURCE_KEY = "omnipaint"
 
@@ -80,12 +92,23 @@ class OmniPaintBackend:
     ) -> GenerationResult:
         import torch
 
+        # Encoding a condition invokes the VAE. Diffusers' sequential offload
+        # hook consequently moves the transformer back to CPU. OmniPaint then
+        # bypasses the transformer's normal forward hook, so encode everything
+        # first and only afterwards put the transformer on its execution device.
+        encoded_conditions = [
+            _EncodedCondition(
+                condition_type=condition.condition_type,
+                encoded=condition.encode(runtime.pipeline),
+            )
+            for condition in conditions
+        ]
         self._prepare_custom_transformer(runtime.pipeline, torch)
         prompt_embeds, pooled_prompt_embeds, text_ids = runtime.embeddings[task]
         guidance = 3.5 if options.guidance_scale is None else options.guidance_scale
         output = runtime.generate(
             runtime.pipeline,
-            conditions=conditions,
+            conditions=encoded_conditions,
             width=image.shape[1],
             height=image.shape[0],
             num_inference_steps=options.num_inference_steps,
