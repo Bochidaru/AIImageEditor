@@ -80,6 +80,7 @@ class OmniPaintBackend:
     ) -> GenerationResult:
         import torch
 
+        self._prepare_custom_transformer(runtime.pipeline, torch)
         prompt_embeds, pooled_prompt_embeds, text_ids = runtime.embeddings[task]
         guidance = 3.5 if options.guidance_scale is None else options.guidance_scale
         output = runtime.generate(
@@ -99,6 +100,19 @@ class OmniPaintBackend:
             options.seed,
             {"backend": "omnipaint", "task": task},
         )
+
+    def _prepare_custom_transformer(self, pipeline: Any, torch: Any) -> None:
+        """Place FLUX transformer explicitly for OmniPaint's custom forward.
+
+        OmniPaint calls ``tranformer_forward`` directly, bypassing the normal
+        Diffusers module-forward hook that would trigger CPU offload.
+        """
+        if not self.config.options.get("cpu_offload", True):
+            return
+        execution_device = getattr(
+            pipeline, "_execution_device", torch.device(self.device.name)
+        )
+        pipeline.transformer.to(execution_device)
 
     def _load_runtime(self) -> _Runtime:
         if not self.config.model_id:
