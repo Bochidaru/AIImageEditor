@@ -3,5 +3,5 @@ conda env create -f environment.yml || conda env update -f environment.yml --pru
 conda activate imageinpaint
 pip install git+https://github.com/facebookresearch/sam2.git
 pip install -e . --no-deps
-python script/install_omnipaint.py
+python scripts/install_omnipaint.py
 ```
