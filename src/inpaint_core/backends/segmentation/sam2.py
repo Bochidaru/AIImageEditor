@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -64,7 +65,42 @@ class SAM2Segmenter:
             from sam2.sam2_image_predictor import SAM2ImagePredictor
         except ImportError as exc:
             raise ImportError("Install Meta's `sam2` package before using SAM2.") from exc
-        return SAM2ImagePredictor.from_pretrained(self.config.model_id, device=self.device.name)
+        model_path = Path(self.config.model_id).expanduser()
+        if not model_path.is_dir():
+            return SAM2ImagePredictor.from_pretrained(
+                self.config.model_id, device=self.device.name
+            )
+
+        # SAM2's from_pretrained() accepts Hub IDs only: internally it uses
+        # the ID as a key in HF_MODEL_ID_TO_FILENAMES. Artifact prefetching
+        # replaces the ID with a local snapshot, so build the model directly
+        # while retaining the original Hub ID in source_model_id.
+        try:
+            from sam2.build_sam import (
+                HF_MODEL_ID_TO_FILENAMES,
+                build_sam2,
+            )
+        except ImportError as exc:
+            raise ImportError("Install Meta's `sam2` package before using SAM2.") from exc
+
+        source_model_id = self.config.options.get("source_model_id")
+        if source_model_id not in HF_MODEL_ID_TO_FILENAMES:
+            raise ValueError(
+                "A local SAM2 snapshot requires options.source_model_id to be a "
+                "supported Hugging Face SAM2 model ID."
+            )
+        config_name, checkpoint_name = HF_MODEL_ID_TO_FILENAMES[source_model_id]
+        checkpoint_path = model_path / checkpoint_name
+        if not checkpoint_path.is_file():
+            raise FileNotFoundError(
+                f"SAM2 checkpoint was not found in the local snapshot: {checkpoint_path}"
+            )
+        model = build_sam2(
+            config_file=config_name,
+            ckpt_path=str(checkpoint_path),
+            device=self.device.name,
+        )
+        return SAM2ImagePredictor(model)
 
     @staticmethod
     def _prediction_args(selection: SelectionPrompt) -> dict[str, np.ndarray | None]:
