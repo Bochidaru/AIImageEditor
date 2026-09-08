@@ -71,10 +71,10 @@ def check_diffusers_api() -> None:
         FluxTransformer2DModel,
         Transformer2DModelOutput,
         USE_PEFT_BACKEND,
-        is_torch_version,
         scale_lora_layers,
         unscale_lora_layers,
     )
+    from diffusers.utils.torch_utils import is_torch_version
     from diffusers.pipelines.flux.pipeline_flux import (
         FluxPipelineOutput,
         calculate_shift,
@@ -111,6 +111,9 @@ def check_omnipaint_import(project_root: Path) -> None:
     source_string = str(source_root)
     if source_string not in sys.path:
         sys.path.insert(0, source_string)
+    from inpaint_core.backends.omnipaint.backend import OmniPaintBackend
+
+    OmniPaintBackend._install_diffusers_compat()
     condition = importlib.import_module("src.condition")
     generate = importlib.import_module("src.generate")
     flux_core = importlib.import_module("src.flux_core")

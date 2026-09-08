@@ -117,12 +117,16 @@ class OmniPaintBackend:
         if source_string not in sys.path:
             sys.path.insert(0, source_string)
         try:
-            Condition = importlib.import_module("src.condition").Condition
+            self._install_diffusers_compat()
+            condition_module = importlib.import_module("src.condition")
+            flux_core_module = importlib.import_module("src.flux_core")
+            self._install_device_compat(condition_module, flux_core_module)
+            Condition = condition_module.Condition
             generate = importlib.import_module("src.generate").generate
         except (ImportError, AttributeError) as exc:
             raise ImportError(
                 "Could not import the official OmniPaint runtime from "
-                f"{source_path}."
+                f"{source_path}. Root cause: {type(exc).__name__}: {exc}"
             ) from exc
 
         import torch
@@ -171,6 +175,51 @@ class OmniPaintBackend:
         else:
             pipeline.to(self.device.name)
         return _Runtime(pipeline, Condition, generate, embeddings)
+
+    @staticmethod
+    def _install_diffusers_compat() -> None:
+        """Bridge a private Diffusers symbol moved after OmniPaint was released."""
+        from diffusers.models.transformers import transformer_flux
+        from diffusers.utils.torch_utils import is_torch_version
+
+        if not hasattr(transformer_flux, "is_torch_version"):
+            transformer_flux.is_torch_version = is_torch_version
+
+    @staticmethod
+    def _install_device_compat(condition_module: Any, flux_core_module: Any) -> None:
+        """Use Diffusers' execution device when CPU offload is enabled."""
+        def encode_images(pipeline: Any, images: Any):
+            execution_device = getattr(
+                pipeline, "_execution_device", pipeline.device
+            )
+            images = pipeline.image_processor.preprocess(images)
+            images = images.to(execution_device).to(pipeline.dtype)
+            images = pipeline.vae.encode(images).latent_dist.sample()
+            images = (
+                images - pipeline.vae.config.shift_factor
+            ) * pipeline.vae.config.scaling_factor
+            images_tokens = pipeline._pack_latents(images, *images.shape)
+            images_ids = pipeline._prepare_latent_image_ids(
+                images.shape[0],
+                images.shape[2],
+                images.shape[3],
+                execution_device,
+                pipeline.dtype,
+            )
+            if images_tokens.shape[1] != images_ids.shape[0]:
+                images_ids = pipeline._prepare_latent_image_ids(
+                    images.shape[0],
+                    images.shape[2] // 2,
+                    images.shape[3] // 2,
+                    execution_device,
+                    pipeline.dtype,
+                )
+            return images_tokens, images_ids
+
+        # condition.py imported encode_images into its own module namespace,
+        # so both references must be replaced.
+        condition_module.encode_images = encode_images
+        flux_core_module.encode_images = encode_images
 
     def _load_embeddings(self, path: str, torch: Any, dtype: Any):
         data = np.load(path)

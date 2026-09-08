@@ -32,7 +32,7 @@ return the model's complete generated image after padding is removed.
 ## Setup
 
 ```bash
-conda env create -f environment.yml
+conda env create -f environment.yml || conda env update -f environment.yml --prune
 conda activate imageinpaint
 pip install -e .
 pip install git+https://github.com/facebookresearch/sam2.git
@@ -50,17 +50,8 @@ Diffusers 0.35.1 for `FluxKontextPipeline`. `environment.yml` instead pins one
 compatibility set for both integrations, and `check_environment.py` verifies
 the exact APIs after installation. NumPy, SciPy, and OpenCV are
 kept on Conda Forge to avoid mixing incompatible compiled wheels.
-
-If the environment already exists, create a clean comparison environment rather
-than upgrading the old one in place:
-
-```bash
-conda env create -f environment.yml || conda env update -f environment.yml --prune
-conda activate imageinpaint
-pip install -e .
-pip install git+https://github.com/facebookresearch/sam2.git
-python scripts/check_environment.py --require-cuda
-```
+The project backend also installs a small runtime shim for an internal
+Diffusers symbol that moved after OmniPaint was released.
 
 With `artifacts.prefetch_on_init: true`, `ImageProcessor.from_config()` first
 downloads every configured checkpoint to the local Hugging Face cache and
