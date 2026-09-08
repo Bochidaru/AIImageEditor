@@ -55,8 +55,8 @@ If the environment already exists, create a clean comparison environment rather
 than upgrading the old one in place:
 
 ```bash
-conda env create -f environment.yml -n imageinpaint-v2
-conda activate imageinpaint-v2
+conda env create -f environment.yml || conda env update -f environment.yml --prune
+conda activate imageinpaint
 pip install -e .
 pip install git+https://github.com/facebookresearch/sam2.git
 python scripts/check_environment.py --require-cuda
