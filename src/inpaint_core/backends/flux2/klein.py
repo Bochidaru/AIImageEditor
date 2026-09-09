@@ -87,15 +87,34 @@ class Flux2KleinBackend:
             self.config.model_id,
             torch_dtype=dtype,
         )
-        if self.config.options.get("vae_tiling", True):
-            pipeline.enable_vae_tiling()
-        if self.config.options.get("vae_slicing", True):
-            pipeline.enable_vae_slicing()
+        self._enable_vae_memory_options(pipeline)
         if self.config.options.get("cpu_offload", True):
             pipeline.enable_model_cpu_offload()
         else:
             pipeline.to(self.device.name)
         return pipeline
+
+    def _enable_vae_memory_options(self, pipeline: Any) -> None:
+        """Enable VAE optimizations across old and component-level APIs."""
+        vae = getattr(pipeline, "vae", None)
+        if self.config.options.get("vae_tiling", True):
+            enable_tiling = getattr(vae, "enable_tiling", None)
+            if not callable(enable_tiling):
+                enable_tiling = getattr(pipeline, "enable_vae_tiling", None)
+            if not callable(enable_tiling):
+                raise AttributeError(
+                    f"{type(pipeline).__name__} does not support VAE tiling."
+                )
+            enable_tiling()
+        if self.config.options.get("vae_slicing", True):
+            enable_slicing = getattr(vae, "enable_slicing", None)
+            if not callable(enable_slicing):
+                enable_slicing = getattr(pipeline, "enable_vae_slicing", None)
+            if not callable(enable_slicing):
+                raise AttributeError(
+                    f"{type(pipeline).__name__} does not support VAE slicing."
+                )
+            enable_slicing()
 
     def _pad_image(self, image: ImageArray) -> tuple[ImageArray, tuple[int, int]]:
         multiple = int(self.config.options.get("size_multiple", 16))

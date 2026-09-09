@@ -19,12 +19,25 @@ class FakeGenerator:
         return self
 
 
+class FakeVAE:
+    def __init__(self):
+        self.tiling_enabled = False
+        self.slicing_enabled = False
+
+    def enable_tiling(self):
+        self.tiling_enabled = True
+
+    def enable_slicing(self):
+        self.slicing_enabled = True
+
+
 class FakePipeline:
     load_options = None
 
     def __init__(self):
         self.cpu_offload_enabled = False
         self.calls = []
+        self.vae = FakeVAE()
 
     @classmethod
     def from_pretrained(cls, model_id, **kwargs):
@@ -33,12 +46,6 @@ class FakePipeline:
 
     def enable_model_cpu_offload(self):
         self.cpu_offload_enabled = True
-
-    def enable_vae_tiling(self):
-        pass
-
-    def enable_vae_slicing(self):
-        pass
 
     def __call__(self, **kwargs):
         self.calls.append(kwargs)
@@ -80,6 +87,8 @@ def test_klein_loads_once_and_uses_distilled_defaults(monkeypatch):
     assert pipeline.calls[0]["num_inference_steps"] == 4
     assert pipeline.calls[0]["guidance_scale"] == 1.0
     assert pipeline.cpu_offload_enabled is True
+    assert pipeline.vae.tiling_enabled is True
+    assert pipeline.vae.slicing_enabled is True
 
 
 def test_klein_text_to_image_honors_call_overrides(monkeypatch):
