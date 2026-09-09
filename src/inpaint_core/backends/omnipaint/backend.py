@@ -296,12 +296,24 @@ class OmniPaintBackend:
 
     @staticmethod
     def _install_diffusers_compat() -> None:
-        """Bridge a private Diffusers symbol moved after OmniPaint was released."""
+        """Bridge private Diffusers symbols moved after OmniPaint was released."""
         from diffusers.models.transformers import transformer_flux
+        from diffusers.utils import (
+            USE_PEFT_BACKEND,
+            scale_lora_layers,
+            unscale_lora_layers,
+        )
         from diffusers.utils.torch_utils import is_torch_version
 
-        if not hasattr(transformer_flux, "is_torch_version"):
-            transformer_flux.is_torch_version = is_torch_version
+        compatibility_symbols = {
+            "USE_PEFT_BACKEND": USE_PEFT_BACKEND,
+            "scale_lora_layers": scale_lora_layers,
+            "unscale_lora_layers": unscale_lora_layers,
+            "is_torch_version": is_torch_version,
+        }
+        for name, value in compatibility_symbols.items():
+            if not hasattr(transformer_flux, name):
+                setattr(transformer_flux, name, value)
 
     @staticmethod
     def _install_device_compat(condition_module: Any, flux_core_module: Any) -> None:

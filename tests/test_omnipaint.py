@@ -67,3 +67,41 @@ def test_omnipaint_rejects_quantizing_non_transformer_components(monkeypatch):
 
     with pytest.raises(ValueError, match="only quantization_components"):
         backend._pipeline_load_options(object())
+
+
+def test_omnipaint_installs_moved_diffusers_symbols(monkeypatch):
+    transformer_flux = ModuleType(
+        "diffusers.models.transformers.transformer_flux"
+    )
+    transformers = ModuleType("diffusers.models.transformers")
+    transformers.transformer_flux = transformer_flux
+    models = ModuleType("diffusers.models")
+    models.transformers = transformers
+    diffusers = ModuleType("diffusers")
+    diffusers.models = models
+
+    utils = ModuleType("diffusers.utils")
+    utils.USE_PEFT_BACKEND = object()
+    utils.scale_lora_layers = lambda *args: None
+    utils.unscale_lora_layers = lambda *args: None
+    torch_utils = ModuleType("diffusers.utils.torch_utils")
+    torch_utils.is_torch_version = lambda *args: True
+    utils.torch_utils = torch_utils
+
+    monkeypatch.setitem(sys.modules, "diffusers", diffusers)
+    monkeypatch.setitem(sys.modules, "diffusers.models", models)
+    monkeypatch.setitem(sys.modules, "diffusers.models.transformers", transformers)
+    monkeypatch.setitem(
+        sys.modules,
+        "diffusers.models.transformers.transformer_flux",
+        transformer_flux,
+    )
+    monkeypatch.setitem(sys.modules, "diffusers.utils", utils)
+    monkeypatch.setitem(sys.modules, "diffusers.utils.torch_utils", torch_utils)
+
+    OmniPaintBackend._install_diffusers_compat()
+
+    assert transformer_flux.USE_PEFT_BACKEND is utils.USE_PEFT_BACKEND
+    assert transformer_flux.scale_lora_layers is utils.scale_lora_layers
+    assert transformer_flux.unscale_lora_layers is utils.unscale_lora_layers
+    assert transformer_flux.is_torch_version is torch_utils.is_torch_version

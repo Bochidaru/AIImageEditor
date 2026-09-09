@@ -66,6 +66,12 @@ def check_import(
 
 
 def check_diffusers_api() -> None:
+    from inpaint_core.backends.omnipaint.backend import OmniPaintBackend
+
+    # OmniPaint imports private symbols from their pre-0.37 locations. Install
+    # the project's compatibility aliases before validating those imports.
+    OmniPaintBackend._install_diffusers_compat()
+
     from diffusers import Flux2KleinPipeline, FluxFillPipeline, FluxPipeline
     from diffusers.models.transformers.transformer_flux import (
         FluxTransformer2DModel,
