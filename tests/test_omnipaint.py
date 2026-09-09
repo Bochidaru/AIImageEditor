@@ -69,6 +69,14 @@ def test_omnipaint_rejects_quantizing_non_transformer_components(monkeypatch):
         backend._pipeline_load_options(object())
 
 
+def test_omnipaint_rejects_int8_with_cpu_offload():
+    backend = make_backend()
+    backend.config.options["cpu_offload"] = True
+
+    with pytest.raises(ValueError, match="does not support cpu_offload"):
+        backend._validate_runtime_options()
+
+
 def test_omnipaint_installs_moved_diffusers_symbols(monkeypatch):
     transformer_flux = ModuleType(
         "diffusers.models.transformers.transformer_flux"

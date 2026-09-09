@@ -34,7 +34,9 @@ models:
     checkpoint: null
     base_model_id: black-forest-labs/FLUX.1-dev
     source_path: ../third_party/OmniPaint
-    cpu_offload: true
+    # OmniPaint bypasses Diffusers' transformer forward hook. Keep its INT8
+    # transformer resident on the GPU so bitsandbytes retains CB/SCB state.
+    cpu_offload: false
     # Upstream allows 1024px, but this project uses a safer 768px profile for
     # 32 GB GPUs. Raise to 1024 only after measuring peak VRAM on your device.
     max_image_side: 768
@@ -51,7 +53,8 @@ models:
     load_text_encoders: false
     vae_tiling: true
     vae_slicing: true
-    release_cuda_after_run: true
+    # The sequential ModelManager releases this backend when another one loads.
+    release_cuda_after_run: false
     num_inference_steps: 28
     guidance_scale: 3.5
   upscaler:

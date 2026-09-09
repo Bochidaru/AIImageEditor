@@ -180,6 +180,7 @@ class OmniPaintBackend:
                 torch.cuda.empty_cache()
 
     def _load_runtime(self) -> _Runtime:
+        self._validate_runtime_options()
         if not self.config.model_id:
             raise ValueError("models.omnipaint.model_id is not configured.")
         source_path = Path(
@@ -259,6 +260,19 @@ class OmniPaintBackend:
         if self.config.options.get("vae_slicing", True):
             pipeline.enable_vae_slicing()
         return _Runtime(pipeline, Condition, generate, embeddings)
+
+    def _validate_runtime_options(self) -> None:
+        """Reject offload combinations that lose bitsandbytes INT8 state."""
+        if (
+            self.config.options.get("quantization") == "bitsandbytes_8bit"
+            and self.config.options.get("cpu_offload", True)
+        ):
+            raise ValueError(
+                "OmniPaint does not support cpu_offload with "
+                "bitsandbytes_8bit. Its custom transformer forward bypasses "
+                "Diffusers' offload hook and can lose the INT8 CB/SCB state. "
+                "Set models.omnipaint.cpu_offload to false."
+            )
 
     def _pipeline_load_options(self, dtype: Any) -> dict[str, Any]:
         load_options: dict[str, Any] = {"torch_dtype": dtype}
