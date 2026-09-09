@@ -3,46 +3,12 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editor-store";
-import { OPERATIONS } from "@/lib/types";
+import { OPERATIONS, toPixelSelection, type SelectionPrompt } from "@/lib/types";
 import * as api from "@/lib/api";
 import { CompareSlider } from "@/components/canvas/compare-slider";
+import { computeRenderedImageRect, type RenderedImageRect } from "@/lib/image-geometry";
 
 const DRAG_THRESHOLD = 6;
-
-interface RenderedImageRect {
-  left: number;
-  top: number;
-  width: number;
-  height: number;
-}
-
-/**
- * Where an `object-contain` image actually renders inside its (usually
- * larger, different-aspect-ratio) container — the letterbox offset plus the
- * scaled-down width/height. Both click-coordinate math (toImageSpace) and
- * overlay positioning (points/box) must agree on this same rect, or the
- * overlay drifts away from the image by exactly the letterbox gap whenever
- * the image's aspect ratio doesn't match the container's.
- */
-function computeRenderedImageRect(
-  container: HTMLDivElement,
-  imageEl: HTMLImageElement,
-): RenderedImageRect | null {
-  if (!imageEl.naturalWidth || !imageEl.naturalHeight) return null;
-  const containerRect = container.getBoundingClientRect();
-  const scale = Math.min(
-    containerRect.width / imageEl.naturalWidth,
-    containerRect.height / imageEl.naturalHeight,
-  );
-  const width = imageEl.naturalWidth * scale;
-  const height = imageEl.naturalHeight * scale;
-  return {
-    width,
-    height,
-    left: (containerRect.width - width) / 2,
-    top: (containerRect.height - height) / 2,
-  };
-}
 
 /** Normalized (0-1) image-space point derived from a client mouse event. */
 function toImageSpace(
@@ -81,8 +47,11 @@ export function ImageStage() {
   const maskPreview = useEditorStore((s) => s.maskPreview);
   const setCandidateMasks = useEditorStore((s) => s.setCandidateMasks);
   const setActiveImageId = useEditorStore((s) => s.setActiveImageId);
+  const activeImageSize = useEditorStore((s) => s.activeImageSize);
+  const setActiveImageSize = useEditorStore((s) => s.setActiveImageSize);
   const beginProcessing = useEditorStore((s) => s.beginProcessing);
   const clearError = useEditorStore((s) => s.clearError);
+  const fail = useEditorStore((s) => s.fail);
   const status = useEditorStore((s) => s.status);
 
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -113,6 +82,17 @@ export function ImageStage() {
     if (!container || !img) return;
     setRenderedRect(computeRenderedImageRect(container, img));
   }, []);
+
+  // Records the image's natural pixel dimensions once it loads — selection
+  // math elsewhere is normalized [0,1], but the backend needs real pixel
+  // coordinates, and this is the one place that has naturalWidth/Height.
+  const handleImageLoad = React.useCallback(() => {
+    recomputeRenderedRect();
+    const img = imageRef.current;
+    if (img && img.naturalWidth && img.naturalHeight) {
+      setActiveImageSize({ width: img.naturalWidth, height: img.naturalHeight });
+    }
+  }, [recomputeRenderedRect, setActiveImageSize]);
 
   // Recompute whenever the container is resized (window resize, sidebar
   // toggle, etc.) and whenever a different image becomes active — an image
@@ -173,22 +153,48 @@ export function ImageStage() {
     return useEditorStore.getState().activeImage !== image;
   }
 
-  async function resolveSegmentation(x: number, y: number, negative: boolean) {
-    if (!activeImage) return;
-    const nextSelection = { kind: "point" as const, points: [[x, y]] as [number, number][], labels: [negative ? 0 : 1] as (0 | 1)[] };
-    setSelection(nextSelection);
+  /**
+   * Shared by the point-click and box-drag paths: converts the normalized
+   * selection to pixel coordinates (the backend expects pixel space, not the
+   * [0,1] fractions used for overlay rendering — see toPixelSelection),
+   * resolves an image_id, retries once inline if a previously-cached
+   * image_id has gone stale server-side, and always leaves `status` in a
+   * terminal state (never stuck on "processing" after a failure).
+   */
+  async function runSegmentation(rawSelection: SelectionPrompt, failureDescription: string) {
+    if (!activeImage || !activeImageSize) return;
     beginProcessing("Segmenting selection…");
+    const pixelSelection = toPixelSelection(rawSelection, activeImageSize);
+    const image = activeImage;
     try {
-      const imageId = await ensureImageId(activeImage);
-      const result = await api.segment(activeImage, nextSelection, imageId);
+      const imageId = await ensureImageId(image);
+      let result;
+      try {
+        result = await api.segment(image, pixelSelection, imageId);
+      } catch (error) {
+        if (!imageId) throw error;
+        // A cached image_id can go stale server-side (LRU eviction, a
+        // dev-server restart) — retry once with the image sent inline
+        // instead of leaving the user stuck on a misleading error.
+        setActiveImageId(null);
+        result = await api.segment(image, pixelSelection);
+      }
       // The user may have loaded a different image while this was in
       // flight — discard results computed for the now-abandoned one.
-      if (isStaleImage(activeImage)) return;
+      if (isStaleImage(image)) return;
       setCandidateMasks(result.masks, result.bestIndex);
       clearError();
     } catch {
-      toast.error("Segmentation failed", { description: "Try clicking a different point." });
+      if (isStaleImage(image)) return;
+      fail("Segmentation failed.");
+      toast.error("Segmentation failed", { description: failureDescription });
     }
+  }
+
+  async function resolveSegmentation(x: number, y: number, negative: boolean) {
+    const nextSelection = { kind: "point" as const, points: [[x, y]] as [number, number][], labels: [negative ? 0 : 1] as (0 | 1)[] };
+    setSelection(nextSelection);
+    await runSegmentation(nextSelection, "Try clicking a different point.");
   }
 
   function handleClick(event: React.MouseEvent) {
@@ -244,18 +250,7 @@ export function ImageStage() {
 
     if (!activeImage) return;
     setSelection(box);
-    beginProcessing("Segmenting selection…");
-    try {
-      const imageId = await ensureImageId(activeImage);
-      const result = await api.segment(activeImage, box, imageId);
-      // The user may have loaded a different image while this was in
-      // flight — discard results computed for the now-abandoned one.
-      if (isStaleImage(activeImage)) return;
-      setCandidateMasks(result.masks, result.bestIndex);
-      clearError();
-    } catch {
-      toast.error("Segmentation failed", { description: "Try a different box." });
-    }
+    await runSegmentation(box, "Try a different box.");
   }
 
   const box =
@@ -294,7 +289,7 @@ export function ImageStage() {
             alt="Loaded canvas"
             className="max-h-full max-w-full select-none object-contain"
             draggable={false}
-            onLoad={recomputeRenderedRect}
+            onLoad={handleImageLoad}
           />
         )}
 

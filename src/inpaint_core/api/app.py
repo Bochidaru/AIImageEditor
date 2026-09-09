@@ -13,12 +13,19 @@ from .routes import router
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_CORS_ORIGINS = "http://localhost:3000"
+# No explicit allowlist configured: default to any localhost port rather
+# than a single hardcoded one. Next.js silently picks 3001/3002/3005/... when
+# its default port is already taken, and a single hardcoded default just
+# turns into a CORS failure with no indication that the port is the problem.
+DEFAULT_CORS_ORIGIN_REGEX = r"^http://localhost:\d+$"
 
 
-def _cors_origins() -> list[str]:
-    raw = os.environ.get("INPAINT_API_CORS_ORIGINS", DEFAULT_CORS_ORIGINS)
-    return [origin.strip() for origin in raw.split(",") if origin.strip()]
+def _cors_kwargs() -> dict:
+    raw = os.environ.get("INPAINT_API_CORS_ORIGINS")
+    if raw:
+        origins = [origin.strip() for origin in raw.split(",") if origin.strip()]
+        return {"allow_origins": origins}
+    return {"allow_origins": [], "allow_origin_regex": DEFAULT_CORS_ORIGIN_REGEX}
 
 
 def _warn_if_multi_worker() -> None:
@@ -60,10 +67,10 @@ def create_app(processor: ImageProcessor) -> FastAPI:
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=_cors_origins(),
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
+        **_cors_kwargs(),
     )
 
     # ValueError/IndexError (DecodeError is a ValueError subclass) are how

@@ -6,6 +6,7 @@ import {
   EditResult,
   GenerationOptions,
   GenerationResult,
+  ImageSize,
   MaskOptions,
   OperationId,
   OutpaintMargins,
@@ -25,6 +26,11 @@ export interface HistoryEntry {
   metadata: Record<string, unknown>;
 }
 
+/** Caps the in-memory history list — each entry retains a full-resolution
+ * base64 image, so an unbounded list grows without limit over a long
+ * session. Mirrors the backend's ImageCache max_entries cap. */
+const MAX_HISTORY_ENTRIES = 30;
+
 interface EditorState {
   // Canvas
   sourceImage: string | null;
@@ -34,6 +40,11 @@ interface EditorState {
    * Null means "not registered yet" — reset to null every time activeImage
    * changes so a stale id is never reused against different pixels. */
   activeImageId: string | null;
+  /** Natural pixel dimensions of `activeImage`, set once the <img> element
+   * loads — used to convert normalized [0,1] selection/placement coordinates
+   * to the pixel coordinates the backend expects. Reset to null whenever
+   * activeImage changes, same as activeImageId. */
+  activeImageSize: ImageSize | null;
   referenceImage: string | null;
 
   // Selection / mask
@@ -62,7 +73,8 @@ interface EditorState {
 
   // Actions
   setSourceImage: (dataUrl: string, fileName: string) => void;
-  setActiveImageId: (imageId: string) => void;
+  setActiveImageId: (imageId: string | null) => void;
+  setActiveImageSize: (size: ImageSize) => void;
   setReferenceImage: (dataUrl: string | null) => void;
   setActiveTool: (tool: OperationId | null) => void;
   setSelection: (selection: SelectionPrompt | null) => void;
@@ -90,6 +102,7 @@ const initial = {
   sourceFileName: null,
   activeImage: null,
   activeImageId: null,
+  activeImageSize: null,
   referenceImage: null,
   activeTool: null,
   selection: null,
@@ -123,7 +136,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
   ) {
     set((state) => {
       const patch = typeof partial === "function" ? partial(state) : partial;
-      return "activeImage" in patch ? { ...patch, activeImageId: null } : patch;
+      return "activeImage" in patch ? { ...patch, activeImageId: null, activeImageSize: null } : patch;
     });
   }
 
@@ -145,18 +158,23 @@ export const useEditorStore = create<EditorState>((set, get) => {
       }),
 
     setActiveImageId: (imageId) => set({ activeImageId: imageId }),
+    setActiveImageSize: (size) => set({ activeImageSize: size }),
 
     setReferenceImage: (dataUrl) => set({ referenceImage: dataUrl }),
 
   setActiveTool: (tool) =>
-    set({
+    set((state) => ({
       activeTool: tool,
       selection: null,
       maskPreview: null,
       candidateMasks: [],
       placement: null,
+      // Clear a stale error overlay from the previous tool, but don't
+      // stomp an in-flight "processing" run just because the user switched
+      // tools while it's still going.
+      status: state.status === "error" ? "idle" : state.status,
       errorMessage: null,
-    }),
+    })),
 
   setSelection: (selection) => set({ selection }),
   setPlacement: (box) => set({ placement: box }),
@@ -196,7 +214,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     };
     setWithImageReset((state) => {
       const truncated = state.history.slice(0, state.historyIndex + 1);
-      const history = [...truncated, entry];
+      const history = [...truncated, entry].slice(-MAX_HISTORY_ENTRIES);
       return {
         status: "success",
         activeImage: result.image,
@@ -217,7 +235,7 @@ export const useEditorStore = create<EditorState>((set, get) => {
     };
     setWithImageReset((state) => {
       const truncated = state.history.slice(0, state.historyIndex + 1);
-      const history = [...truncated, entry];
+      const history = [...truncated, entry].slice(-MAX_HISTORY_ENTRIES);
       return {
         status: "success",
         activeImage: result.image,

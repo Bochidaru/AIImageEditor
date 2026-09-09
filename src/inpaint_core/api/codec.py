@@ -17,10 +17,10 @@ class DecodeError(ValueError):
 
 
 def _strip_data_url_prefix(value: str) -> bytes:
-    payload = value.split(",", 1)[1] if value.startswith("data:") else value
     try:
+        payload = value.split(",", 1)[1] if value.startswith("data:") else value
         return base64.b64decode(payload, validate=False)
-    except (binascii.Error, ValueError) as exc:
+    except (binascii.Error, ValueError, IndexError) as exc:
         raise DecodeError("Could not base64-decode the provided image data.") from exc
 
 

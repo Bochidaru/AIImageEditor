@@ -27,6 +27,38 @@ export interface BoxPrompt {
 
 export type SelectionPrompt = PointPrompt | BoxPrompt;
 
+export interface ImageSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Selection/placement coordinates are tracked normalized ([0,1], relative to
+ * the rendered image) so overlay markers can be positioned with CSS percentages
+ * regardless of zoom/letterboxing. The backend, however, expects pixel
+ * coordinates in the original image's dimensions (see sam2.py's point_coords
+ * and operations/common.py's mask_from_box) — convert right before sending.
+ */
+export function toPixelSelection(selection: SelectionPrompt, size: ImageSize): SelectionPrompt {
+  if (selection.kind === "point") {
+    return {
+      ...selection,
+      points: selection.points.map(([x, y]) => [x * size.width, y * size.height] as [number, number]),
+    };
+  }
+  return toPixelBox(selection, size);
+}
+
+export function toPixelBox(box: BoxPrompt, size: ImageSize): BoxPrompt {
+  return {
+    kind: "box",
+    x1: box.x1 * size.width,
+    y1: box.y1 * size.height,
+    x2: box.x2 * size.width,
+    y2: box.y2 * size.height,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Options (mirrors MaskOptions / GenerationOptions / OutpaintMargins / UpscaleOptions)
 // ---------------------------------------------------------------------------

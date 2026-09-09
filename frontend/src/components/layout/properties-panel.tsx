@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useEditorStore } from "@/lib/store/editor-store";
-import { OPERATIONS } from "@/lib/types";
+import { OPERATIONS, toPixelSelection, toPixelBox } from "@/lib/types";
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { readFileAsDataUrl, validateImageFile } from "@/lib/image-file";
@@ -46,6 +46,7 @@ export function PropertiesPanel() {
   const activeImage = useEditorStore((s) => s.activeImage);
   const selection = useEditorStore((s) => s.selection);
   const placement = useEditorStore((s) => s.placement);
+  const activeImageSize = useEditorStore((s) => s.activeImageSize);
   const referenceImage = useEditorStore((s) => s.referenceImage);
   const setReferenceImage = useEditorStore((s) => s.setReferenceImage);
   const prompt = useEditorStore((s) => s.prompt);
@@ -101,12 +102,19 @@ export function PropertiesPanel() {
   async function run() {
     if (!activeImage || !meta) return;
     beginProcessing(`Running ${meta.label.toLowerCase()}…`);
+    // selection/placement are tracked normalized ([0,1]) for overlay
+    // rendering on the canvas — the backend expects pixel coordinates in
+    // the original image's dimensions (see toPixelSelection/toPixelBox).
+    const pixelSelection =
+      selection && activeImageSize ? toPixelSelection(selection, activeImageSize) : undefined;
+    const pixelPlacement =
+      placement && activeImageSize ? toPixelBox(placement, activeImageSize) : undefined;
     try {
       switch (meta.id) {
         case "remove_object": {
           const result = await api.removeObject({
             image: activeImage,
-            selection: selection ?? undefined,
+            selection: pixelSelection,
             maskOptions,
             generationOptions,
           });
@@ -116,7 +124,7 @@ export function PropertiesPanel() {
         case "replace_object": {
           const result = await api.replaceObject({
             image: activeImage,
-            selection: selection ?? undefined,
+            selection: pixelSelection,
             prompt,
             maskOptions,
             generationOptions,
@@ -127,7 +135,7 @@ export function PropertiesPanel() {
         case "replace_background": {
           const result = await api.replaceBackground({
             image: activeImage,
-            foregroundSelection: selection ?? undefined,
+            foregroundSelection: pixelSelection,
             prompt,
             maskOptions,
             generationOptions,
@@ -138,7 +146,7 @@ export function PropertiesPanel() {
         case "add_object_by_prompt": {
           const result = await api.addObjectByPrompt({
             image: activeImage,
-            placement: placement ?? undefined,
+            placement: pixelPlacement,
             prompt,
             maskOptions,
             generationOptions,
@@ -151,7 +159,7 @@ export function PropertiesPanel() {
           const result = await api.addObjectByReference({
             image: activeImage,
             reference: referenceImage,
-            placement: placement ?? undefined,
+            placement: pixelPlacement,
             maskOptions,
             generationOptions,
           });
