@@ -23,14 +23,13 @@ def prefetch_model_assets(config: AppConfig) -> dict[str, str]:
         ) from exc
 
     downloaded: dict[str, str] = {}
-    snapshots: dict[str, str] = {}
+    snapshots: dict[tuple[str, tuple[str, ...]], str] = {}
     cache_dir = config.artifacts.cache_dir
 
     for name, model in {
         "sam2": config.segmentation,
         "flux_fill": config.flux_fill,
-        "flux_generation": config.flux_generation,
-        "flux_kontext": config.flux_kontext,
+        "flux2_klein": config.flux2_klein,
     }.items():
         local = _snapshot(model.model_id, snapshot_download, cache_dir, snapshots)
         if local is not None:
@@ -40,7 +39,21 @@ def prefetch_model_assets(config: AppConfig) -> dict[str, str]:
     base_model_id = config.omnipaint.options.get(
         "base_model_id", "black-forest-labs/FLUX.1-dev"
     )
-    local_base = _snapshot(base_model_id, snapshot_download, cache_dir, snapshots)
+    omni_base_patterns = None
+    if not config.omnipaint.options.get("load_text_encoders", False):
+        omni_base_patterns = [
+            "model_index.json",
+            "scheduler/**",
+            "transformer/**",
+            "vae/**",
+        ]
+    local_base = _snapshot(
+        base_model_id,
+        snapshot_download,
+        cache_dir,
+        snapshots,
+        allow_patterns=omni_base_patterns,
+    )
     if local_base is not None:
         config.omnipaint.options.setdefault("source_base_model_id", base_model_id)
         config.omnipaint.options["base_model_id"] = local_base
@@ -75,19 +88,28 @@ def prefetch_model_assets(config: AppConfig) -> dict[str, str]:
     return downloaded
 
 
-def _snapshot(model_id, snapshot_download, cache_dir, snapshots):
+def _snapshot(
+    model_id,
+    snapshot_download,
+    cache_dir,
+    snapshots,
+    *,
+    allow_patterns=None,
+):
     if not model_id:
         return None
     local_candidate = Path(model_id).expanduser()
     if local_candidate.exists():
         return str(local_candidate.resolve())
-    if model_id not in snapshots:
+    key = (model_id, tuple(allow_patterns or ()))
+    if key not in snapshots:
         logger.info("Downloading model artifacts: %s", model_id)
-        snapshots[model_id] = snapshot_download(
+        snapshots[key] = snapshot_download(
             repo_id=model_id,
             cache_dir=cache_dir,
+            allow_patterns=allow_patterns,
         )
-    return snapshots[model_id]
+    return snapshots[key]
 
 
 def _use_local_model(model: ModelConfig, local_path: str) -> None:

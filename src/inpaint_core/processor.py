@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .backends.flux import FluxFillBackend, FluxGeneratorBackend, FluxKontextBackend
+from .backends.flux import FluxFillBackend
+from .backends.flux2 import Flux2KleinBackend
 from .backends.omnipaint import OmniPaintBackend
 from .backends.protocols import ImageGenerator, MaskedEditor, ObjectRemover, PromptEditor, ReferenceInserter, Segmenter, Upscaler
 from .backends.segmentation import SAM2Segmenter
@@ -20,7 +21,7 @@ class ImageProcessor:
     def __init__(
         self, *, config: AppConfig, segmenter: Segmenter,
         flux_fill: MaskedEditor, omnipaint: ObjectRemover | ReferenceInserter,
-        flux_kontext: PromptEditor, generator: ImageGenerator, upscaler: Upscaler,
+        flux2_klein: PromptEditor | ImageGenerator, upscaler: Upscaler,
         model_manager: ModelManager | None = None,
         memory_tracker: MemoryTracker | None = None,
     ) -> None:
@@ -32,10 +33,10 @@ class ImageProcessor:
         self._context = context
         self._remove = ObjectRemovalOperation(context, omnipaint)
         self._replace = ObjectReplacementOperation(context, flux_fill)
-        self._replace_background = BackgroundReplacementOperation(context, flux_fill)
-        self._insert = ObjectInsertionOperation(context, flux_fill, omnipaint)
-        self._prompt_edit = PromptEditOperation(context, flux_kontext)
-        self._generate = ImageGenerationOperation(context, generator)
+        self._replace_background = BackgroundReplacementOperation(context, flux2_klein)
+        self._insert = ObjectInsertionOperation(context, flux2_klein, omnipaint)
+        self._prompt_edit = PromptEditOperation(context, flux2_klein)
+        self._generate = ImageGenerationOperation(context, flux2_klein)
         self._outpaint = OutpaintingOperation(context, flux_fill)
         self._upscale = UpscalingOperation(context, upscaler)
 
@@ -51,8 +52,7 @@ class ImageProcessor:
             segmenter=SAM2Segmenter(config.segmentation, config.device, manager),
             flux_fill=FluxFillBackend(config.flux_fill, config.device, manager),
             omnipaint=OmniPaintBackend(config.omnipaint, config.device, manager),
-            flux_kontext=FluxKontextBackend(config.flux_kontext, config.device, manager),
-            generator=FluxGeneratorBackend(config.flux_generation, config.device, manager),
+            flux2_klein=Flux2KleinBackend(config.flux2_klein, config.device, manager),
             upscaler=RealESRGANBackend(config.upscaler, config.device, manager),
             model_manager=manager,
         )
@@ -62,9 +62,8 @@ class ImageProcessor:
         expected = {
             "models.segmentation.backend": (config.segmentation.backend, "sam2"),
             "models.flux_fill.backend": (config.flux_fill.backend, "flux_fill"),
-            "models.flux_generation.backend": (config.flux_generation.backend, "flux"),
+            "models.flux2_klein.backend": (config.flux2_klein.backend, "flux2_klein"),
             "models.omnipaint.backend": (config.omnipaint.backend, "omnipaint"),
-            "models.flux_kontext.backend": (config.flux_kontext.backend, "flux_kontext"),
             "models.upscaler.backend": (config.upscaler.backend, "realesrgan"),
         }
         for field, (actual, wanted) in expected.items():
@@ -82,11 +81,11 @@ class ImageProcessor:
     def replace_object(self, image: ImageArray, prompt: str, *, selection: SelectionPrompt | None = None, mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
         return self._replace.run(image, prompt, selection=selection, mask=mask, mask_options=mask_options, generation_options=generation_options)
 
-    def replace_background(self, image: ImageArray, prompt: str, *, foreground_selection: SelectionPrompt | None = None, foreground_mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
-        return self._replace_background.run(image, prompt, foreground_selection=foreground_selection, foreground_mask=foreground_mask, mask_options=mask_options, generation_options=generation_options)
+    def replace_background(self, image: ImageArray, prompt: str, *, generation_options: GenerationOptions | None = None) -> GenerationResult:
+        return self._replace_background.run(image, prompt, generation_options=generation_options)
 
-    def add_object_by_prompt(self, image: ImageArray, prompt: str, *, placement: BoxPrompt | None = None, mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
-        return self._insert.by_prompt(image, prompt, placement=placement, mask=mask, mask_options=mask_options, generation_options=generation_options)
+    def add_object_by_prompt(self, image: ImageArray, prompt: str, *, placement: BoxPrompt | None = None, generation_options: GenerationOptions | None = None) -> GenerationResult:
+        return self._insert.by_prompt(image, prompt, placement=placement, generation_options=generation_options)
 
     def add_object_by_reference(self, image: ImageArray, reference: ImageArray, *, placement: BoxPrompt | None = None, mask: MaskArray | None = None, reference_mask: MaskArray | None = None, mask_options: MaskOptions | None = None, generation_options: GenerationOptions | None = None) -> EditResult:
         return self._insert.by_reference(image, reference, placement=placement, mask=mask, reference_mask=reference_mask, mask_options=mask_options, generation_options=generation_options)

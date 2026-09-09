@@ -50,8 +50,14 @@ class MaskOptions:
 @dataclass(slots=True)
 class GenerationOptions:
     seed: int = 42
-    num_inference_steps: int = 28
+    # None lets each backend use its own appropriate default: Klein uses 4,
+    # whereas FLUX Fill and OmniPaint normally use 28.
+    num_inference_steps: int | None = None
     guidance_scale: float | None = None
+
+    def __post_init__(self) -> None:
+        if self.num_inference_steps is not None and self.num_inference_steps <= 0:
+            raise ValueError("num_inference_steps must be greater than zero.")
 
 
 @dataclass(frozen=True, slots=True)

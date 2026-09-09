@@ -34,8 +34,11 @@ def main() -> None:
     processor = ImageProcessor.from_config(args.config)
     raw = preprocess_image_only(args.image)
     selection = PointPrompt([(raw.shape[1] / 2, raw.shape[0] / 2)], [1])
-    # Leave room for the outpaint smoke test.
-    input_limit = min(processor.config.processing.max_image_side, 768)
+    # The same smoke-test image is reused by the stricter OmniPaint modes.
+    input_limit = min(
+        processor.config.processing.max_image_side,
+        int(processor.config.omnipaint.options["max_image_side"]),
+    )
     image, selection = preprocess_image(raw, selection, max_side=input_limit)
     segmentation = processor.segment(image, selection)
     mask = segmentation.best_mask
@@ -49,7 +52,7 @@ def main() -> None:
         elif mode == "replace":
             save(processor.replace_object(image, "a golden retriever", mask=mask).image, args.output / "replace.png")
         elif mode == "background":
-            save(processor.replace_background(image, "a tropical beach", foreground_mask=mask).image, args.output / "background.png")
+            save(processor.replace_background(image, "a tropical beach").image, args.output / "background.png")
         elif mode == "add-prompt":
             box = BoxPrompt(32, 32, image.shape[1] // 3, image.shape[0] // 3)
             save(processor.add_object_by_prompt(image, "a red balloon", placement=box).image, args.output / "add-prompt.png")

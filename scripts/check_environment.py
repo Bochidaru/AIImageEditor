@@ -15,7 +15,7 @@ EXPECTED_VERSIONS = {
     "scipy": "1.16.3",
     "torch": "2.14.0",
     "torchvision": "0.29.0",
-    "diffusers": "0.35.1",
+    "diffusers": "0.37.1",
     "transformers": "4.55.4",
     "tokenizers": "0.21.4",
     "peft": "0.17.1",
@@ -66,7 +66,7 @@ def check_import(
 
 
 def check_diffusers_api() -> None:
-    from diffusers import FluxFillPipeline, FluxKontextPipeline, FluxPipeline
+    from diffusers import Flux2KleinPipeline, FluxFillPipeline, FluxPipeline
     from diffusers.models.transformers.transformer_flux import (
         FluxTransformer2DModel,
         Transformer2DModelOutput,
@@ -88,7 +88,7 @@ def check_diffusers_api() -> None:
         item is not None
         for item in (
             FluxFillPipeline,
-            FluxKontextPipeline,
+            Flux2KleinPipeline,
             FluxPipeline,
             FluxTransformer2DModel,
             Transformer2DModelOutput,

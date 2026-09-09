@@ -60,7 +60,7 @@ def make_processor(mask):
     backend = FakeBackend()
     processor = ImageProcessor(
         config=config, segmenter=segmenter, flux_fill=backend,
-        omnipaint=backend, flux_kontext=backend, generator=backend,
+        omnipaint=backend, flux2_klein=backend,
         upscaler=backend,
     )
     return processor, backend
@@ -77,14 +77,15 @@ def test_remove_uses_omnipaint_and_returns_generated_full_image():
     assert backend.last_mask[30, 30] == 255
 
 
-def test_background_replacement_inverts_foreground_mask():
+def test_background_replacement_uses_direct_klein_edit():
     image = np.zeros((64, 64, 3), np.uint8)
     foreground = np.zeros((64, 64), np.uint8)
     foreground[20:40, 20:40] = 255
     processor, backend = make_processor(foreground)
-    processor.replace_background(image, "a beach", foreground_mask=foreground, mask_options=MaskOptions())
-    assert backend.last_mask[30, 30] == 0
-    assert backend.last_mask[0, 0] == 255
+    result = processor.replace_background(image, "a beach")
+    assert result.image.shape == image.shape
+    assert "Replace only the background with a beach" in backend.last_prompt
+    assert "Preserve the main foreground subject exactly" in backend.last_prompt
 
 
 def test_replacement_forwards_prompt_and_pads_full_image():
@@ -103,8 +104,9 @@ def test_both_object_insertion_modes():
     reference = np.full((16, 16, 3), 100, np.uint8)
     processor, backend = make_processor(np.zeros((64, 64), np.uint8))
     box = BoxPrompt(10, 10, 30, 30)
-    processor.add_object_by_prompt(image, "a cup", placement=box, mask_options=MaskOptions())
-    assert backend.last_prompt == "a cup"
+    processor.add_object_by_prompt(image, "a cup", placement=box)
+    assert "Add a cup" in backend.last_prompt
+    assert "upper-left" in backend.last_prompt
     processor.add_object_by_reference(image, reference, placement=box, mask_options=MaskOptions())
     np.testing.assert_array_equal(backend.last_reference, reference)
 

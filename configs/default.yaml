@@ -15,13 +15,19 @@ models:
     cpu_offload: true
     quantization: null
     quantization_components: [transformer]
-  # Pure text-to-image needs base FLUX; FLUX Fill is a masked editor.
-  flux_generation:
-    backend: flux
-    model_id: black-forest-labs/FLUX.1-dev
+    num_inference_steps: 28
+  # One compact distilled pipeline handles direct editing and text-to-image.
+  flux2_klein:
+    backend: flux2_klein
+    model_id: black-forest-labs/FLUX.2-klein-4B
     checkpoint: null
     cpu_offload: true
     quantization: null
+    num_inference_steps: 4
+    guidance_scale: 1.0
+    size_multiple: 16
+    vae_tiling: true
+    vae_slicing: true
   omnipaint:
     backend: omnipaint
     model_id: yeates/OmniPaint
@@ -29,18 +35,25 @@ models:
     base_model_id: black-forest-labs/FLUX.1-dev
     source_path: ../third_party/OmniPaint
     cpu_offload: true
+    # Upstream allows 1024px, but this project uses a safer 768px profile for
+    # 32 GB GPUs. Raise to 1024 only after measuring peak VRAM on your device.
+    max_image_side: 768
     reference_size: 512
     reference_position_delta: [0, -32]
     removal_lora: weights/omnipaint_remove.safetensors
     insertion_lora: weights/omnipaint_insert.safetensors
     removal_embedding: embeddings/remove.npz
     insertion_embedding: embeddings/insert.npz
-  flux_kontext:
-    backend: flux_kontext
-    model_id: black-forest-labs/FLUX.1-Kontext-dev
-    checkpoint: null
-    cpu_offload: true
-    quantization: null
+    # Quantize only OmniPaint's largest component. Activations and the VAE stay
+    # bfloat16; this is separate from dtype and is the intended 32 GB profile.
+    quantization: bitsandbytes_8bit
+    quantization_components: [transformer]
+    load_text_encoders: false
+    vae_tiling: true
+    vae_slicing: true
+    release_cuda_after_run: true
+    num_inference_steps: 28
+    guidance_scale: 3.5
   upscaler:
     backend: realesrgan
     model_id: RealESRGAN_x4plus
@@ -68,5 +81,6 @@ mask:
   erode: 0
 generation:
   seed: 42
-  num_inference_steps: 28
+  # Backend-specific defaults are used unless a call overrides these values.
+  num_inference_steps: null
   guidance_scale: null
