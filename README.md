@@ -59,6 +59,36 @@ downloads every configured checkpoint to the local Hugging Face cache and
 Real-ESRGAN to `weights/`. It does not construct pipelines or move weights to
 RAM/GPU yet. The first operation using a backend performs that separate load.
 
+## HTTP API (frontend integration)
+
+`src/inpaint_core/api/` wraps `ImageProcessor` in a FastAPI app so the Next.js
+frontend (`frontend/`) can call it over HTTP instead of importing the Python
+package directly. Images/masks travel as base64 `data:image/png;base64,...`
+strings in JSON, matching how the frontend already stores them.
+
+```bash
+# No GPU / no checkpoints — in-memory fake backends. This is what
+# `frontend/` talks to by default in local dev (NEXT_PUBLIC_API_URL).
+python scripts/run_api.py --fake
+
+# Real inference — same config used by ImageProcessor.from_config().
+python scripts/run_api.py --config configs/default.yaml
+```
+
+Endpoints: `POST /api/segment`, `/api/remove-object`, `/api/replace-object`,
+`/api/replace-background`, `/api/add-object/prompt`, `/api/add-object/reference`,
+`/api/prompt-edit`, `/api/generate`, `/api/outpaint`, `/api/upscale`, and
+`GET /api/health`. CORS defaults to `http://localhost:3000`
+(`INPAINT_API_CORS_ORIGINS`, comma-separated, to add more origins).
+
+On the frontend side, `frontend/src/lib/api/index.ts` picks between the real
+client (`client.ts`) and an offline mock (`mock.ts`) via
+`NEXT_PUBLIC_USE_MOCK_API` — see `frontend/.env.local.example`.
+
+`tests/test_api.py` exercises every endpoint through FastAPI's `TestClient`
+against `inpaint_core.testing.build_fake_processor()`, so the HTTP contract
+is covered by `pytest` without GPU hardware.
+
 ## Notebook examples
 
 Run the setup cell once. It prepares the input and obtains one reusable object

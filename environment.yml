@@ -19,6 +19,9 @@ dependencies:
   - ipywidgets
   - ipykernel
   - pip:
+      # HTTP API layer connecting the frontend to ImageProcessor.
+      - fastapi==0.121.2
+      - uvicorn[standard]==0.38.0
       # Linux/WSL CUDA 13 wheels are available from PyPI. On native Windows,
       # install this pair from https://download.pytorch.org/whl/cu130 instead.
       - torch==2.14.0

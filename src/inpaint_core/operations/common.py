@@ -21,6 +21,7 @@ from ..types import (
     MaskOptions,
     SelectionPrompt,
 )
+from ..validation import require_exactly_one
 
 
 @dataclass(slots=True)
@@ -63,8 +64,7 @@ class OperationContext:
         mask: MaskArray | None,
         options: MaskOptions,
     ) -> MaskArray:
-        if (selection is None) == (mask is None):
-            raise ValueError("Provide exactly one of selection or mask.")
+        require_exactly_one(selection, mask, "selection", "mask")
         if mask is not None:
             validate_mask(mask, image.shape)
             raw = mask

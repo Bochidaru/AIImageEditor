@@ -13,6 +13,7 @@ from ..types import (
     MaskArray,
     MaskOptions,
 )
+from ..validation import require_exactly_one
 from .common import OperationContext, mask_from_box
 
 
@@ -75,8 +76,7 @@ class ObjectInsertionOperation:
         self, image: ImageArray, placement: BoxPrompt | None,
         mask: MaskArray | None, options: MaskOptions | None,
     ) -> MaskArray:
-        if (placement is None) == (mask is None):
-            raise ValueError("Provide exactly one of placement or mask.")
+        require_exactly_one(placement, mask, "placement", "mask")
         mo = self.context.mask_options(options)
         raw = mask_from_box(image, placement) if placement is not None else mask
         return self.context.resolve_mask(image, None, raw, mo)
