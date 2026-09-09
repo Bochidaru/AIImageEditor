@@ -23,7 +23,7 @@ EXPECTED_VERSIONS = {
     "huggingface-hub": "0.34.4",
     "safetensors": "0.6.2",
     "sentencepiece": "0.2.1",
-    "bitsandbytes": "0.48.0",
+    "bitsandbytes": "0.48.2",
     "realesrgan": "0.3.0",
     "basicsr": "1.4.2",
     "facexlib": "0.3.0",
