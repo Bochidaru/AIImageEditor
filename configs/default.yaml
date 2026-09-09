@@ -34,9 +34,9 @@ models:
     checkpoint: null
     base_model_id: black-forest-labs/FLUX.1-dev
     source_path: ../third_party/OmniPaint
-    # OmniPaint bypasses Diffusers' transformer forward hook. Keep its INT8
-    # transformer resident on the GPU so bitsandbytes retains CB/SCB state.
-    cpu_offload: false
+    # Use regular BF16 weights with model offload. Diffusers 0.37.1's
+    # pipeline-level INT8 path leaves meta tensors when OmniPaint LoRAs load.
+    cpu_offload: true
     # Upstream allows 1024px, but this project uses a safer 768px profile for
     # 32 GB GPUs. Raise to 1024 only after measuring peak VRAM on your device.
     max_image_side: 768
@@ -46,15 +46,13 @@ models:
     insertion_lora: weights/omnipaint_insert.safetensors
     removal_embedding: embeddings/remove.npz
     insertion_embedding: embeddings/insert.npz
-    # Quantize only OmniPaint's largest component. Activations and the VAE stay
-    # bfloat16; this is separate from dtype and is the intended 32 GB profile.
-    quantization: bitsandbytes_8bit
+    # Pipeline-level bitsandbytes INT8 is intentionally disabled for OmniPaint.
+    quantization: null
     quantization_components: [transformer]
     load_text_encoders: false
     vae_tiling: true
     vae_slicing: true
-    # The sequential ModelManager releases this backend when another one loads.
-    release_cuda_after_run: false
+    release_cuda_after_run: true
     num_inference_steps: 28
     guidance_scale: 3.5
   upscaler:

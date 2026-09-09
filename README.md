@@ -284,14 +284,13 @@ Model placement and offload remain backend-specific. `ModelManager` owns model
 lifetime, but does not know how Diffusers, SAM2, or Real-ESRGAN perform inference.
 
 OmniPaint has a separate 32 GB-oriented profile: its target image is limited to
-768 px on the longest side (the upstream maximum is 1024), only the transformer
-is quantized to INT8, and static prompt embeddings stay on CPU while idle.
-The INT8 transformer remains on the GPU while the OmniPaint backend is active
-because OmniPaint's custom forward bypasses Diffusers' CPU-offload hook; the
-`sequential` model manager releases it when a different backend is loaded.
-INT8 reduces weight memory; it does not
-turn activations or the VAE into INT8, so available VRAM still depends on image
-size, CUDA allocator behavior, and library versions. Verify the actual peak via
+768 px on the longest side (the upstream maximum is 1024), text encoders are
+not loaded, static prompt embeddings stay on CPU while idle, and regular BF16
+weights use model CPU offload. Pipeline-level bitsandbytes INT8 is disabled for
+OmniPaint because loading its LoRAs can leave quantized parameters on the meta
+device, while its custom transformer forward also bypasses Diffusers' normal
+offload hook. Available VRAM still depends on image size, CUDA allocator
+behavior, and library versions. Verify the actual peak via
 `save_memory_stats()` on the deployment GPU.
 
 ## Verification
