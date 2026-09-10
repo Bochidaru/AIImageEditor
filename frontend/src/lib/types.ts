@@ -155,8 +155,10 @@ export interface EditResult {
 // Operations — the 10 capabilities verified on ImageProcessor
 // ---------------------------------------------------------------------------
 
+// Note: /api/segment isn't a user-selectable sidebar tool (it's triggered
+// implicitly by clicking/dragging on the canvas for mask-based tools), so
+// it deliberately has no OperationId/OPERATIONS entry here.
 export type OperationId =
-  | "segment"
   | "remove_object"
   | "replace_object"
   | "replace_background"
@@ -196,10 +198,21 @@ export interface OperationMeta {
    * slider (and what actually gets sent) matched to the selected tool's
    * model instead of one global value overriding every backend. */
   defaultSteps: number;
+  /** Whether this tool's Run call sends generationOptions (seed +
+   * numInferenceSteps) to the backend at all. False for upscale, which
+   * only takes UpscaleOptions (scale/faceEnhance/tile) — gates whether
+   * properties-panel.tsx shows the "Generation settings" section, so a
+   * Steps/Seed value the backend never reads can't be set and "remembered"
+   * per-tool as if it did something. */
+  usesGenerationOptions: boolean;
 }
 
-export const OPERATIONS: OperationMeta[] = [
-  {
+// Record, not an array: TypeScript enforces every OperationId has an entry
+// here, so a tool added to the union without matching metadata (e.g.
+// missing defaultSteps) is a compile error instead of a silent runtime gap
+// (editor-store.ts's defaultStepsFor relies on this).
+const OPERATIONS_BY_ID: Record<OperationId, OperationMeta> = {
+  remove_object: {
     id: "remove_object",
     label: "Remove Object",
     shortLabel: "Remove",
@@ -211,8 +224,9 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: false,
     requiresReference: false,
     defaultSteps: 28,
+    usesGenerationOptions: true,
   },
-  {
+  replace_object: {
     id: "replace_object",
     label: "Replace Object",
     shortLabel: "Replace",
@@ -224,8 +238,9 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: true,
     requiresReference: false,
     defaultSteps: 28,
+    usesGenerationOptions: true,
   },
-  {
+  replace_background: {
     id: "replace_background",
     label: "Replace Background",
     shortLabel: "Background",
@@ -237,8 +252,9 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: true,
     requiresReference: false,
     defaultSteps: 4,
+    usesGenerationOptions: true,
   },
-  {
+  add_object_by_prompt: {
     id: "add_object_by_prompt",
     label: "Add Object (Prompt)",
     shortLabel: "Add · Prompt",
@@ -250,8 +266,9 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: true,
     requiresReference: false,
     defaultSteps: 4,
+    usesGenerationOptions: true,
   },
-  {
+  add_object_by_reference: {
     id: "add_object_by_reference",
     label: "Add Object (Reference)",
     shortLabel: "Add · Reference",
@@ -263,8 +280,9 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: false,
     requiresReference: true,
     defaultSteps: 28,
+    usesGenerationOptions: true,
   },
-  {
+  prompt_edit: {
     id: "prompt_edit",
     label: "Prompt Edit",
     shortLabel: "Edit",
@@ -276,8 +294,9 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: true,
     requiresReference: false,
     defaultSteps: 4,
+    usesGenerationOptions: true,
   },
-  {
+  outpaint: {
     id: "outpaint",
     label: "Outpaint",
     shortLabel: "Outpaint",
@@ -289,8 +308,9 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: true,
     requiresReference: false,
     defaultSteps: 28,
+    usesGenerationOptions: true,
   },
-  {
+  upscale: {
     id: "upscale",
     label: "Upscale",
     shortLabel: "Upscale",
@@ -301,9 +321,13 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: false,
     requiresPrompt: false,
     requiresReference: false,
+    // Not read by client.ts's upscale() call (it only sends UpscaleOptions),
+    // so this value is never sent anywhere — irrelevant given
+    // usesGenerationOptions: false below hides the Steps slider entirely.
     defaultSteps: 28,
+    usesGenerationOptions: false,
   },
-  {
+  generate_image: {
     id: "generate_image",
     label: "Generate Image",
     shortLabel: "Generate",
@@ -315,7 +339,13 @@ export const OPERATIONS: OperationMeta[] = [
     requiresPrompt: true,
     requiresReference: false,
     defaultSteps: 4,
+    usesGenerationOptions: true,
   },
-];
+};
+
+/** Sidebar/tool-iteration order — Object.values preserves the key insertion
+ * order above (string keys), so this stays in the same order the UI has
+ * always shown. Use OPERATIONS_BY_ID directly for a single-tool lookup. */
+export const OPERATIONS: OperationMeta[] = Object.values(OPERATIONS_BY_ID);
 
 export type ProcessingStatus = "idle" | "segmenting" | "processing" | "success" | "error";
