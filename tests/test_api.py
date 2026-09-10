@@ -8,6 +8,7 @@ from PIL import Image
 
 from inpaint_core.api import create_app
 from inpaint_core.api.codec import decode_image, decode_mask, encode_image, encode_mask
+from inpaint_core.api.schemas import GenerationOptionsIn
 from inpaint_core.testing import build_fake_processor
 
 
@@ -36,6 +37,14 @@ def test_codec_round_trip():
     image = np.arange(64 * 64 * 3, dtype=np.uint8).reshape(64, 64, 3)
     decoded = decode_image(encode_image(image))
     np.testing.assert_array_equal(decoded, image)
+
+
+def test_generation_options_defaults_steps_to_none():
+    """A client that doesn't set num_inference_steps must get None through
+    to_domain(), so each backend's own tuned step count applies (see
+    backends/flux2/klein.py's `options.num_inference_steps or <tuned>`)
+    instead of a single hardcoded value overriding every model."""
+    assert GenerationOptionsIn().to_domain().num_inference_steps is None
 
 
 def test_decode_image_composites_transparent_pixels_onto_white():
@@ -215,6 +224,34 @@ def test_add_object_by_prompt_with_placement_box(client, sample_image_b64):
     )
     assert response.status_code == 200
     assert "mask" not in response.json()
+
+
+def test_replace_background_rejects_legacy_mask_field(client, sample_image_b64, sample_mask_b64):
+    """replace-background dropped mask/selection support — a client still on
+    the old contract must get a 422, not have the field silently ignored."""
+    response = client.post(
+        "/api/replace-background",
+        json={
+            "image": sample_image_b64,
+            "prompt": "a beach",
+            "foreground_mask": sample_mask_b64,
+        },
+    )
+    assert response.status_code == 422
+
+
+def test_add_object_by_prompt_rejects_legacy_mask_field(client, sample_image_b64, sample_mask_b64):
+    """add-object/prompt dropped mask support — a client still on the old
+    contract must get a 422, not have the field silently ignored."""
+    response = client.post(
+        "/api/add-object/prompt",
+        json={
+            "image": sample_image_b64,
+            "prompt": "a small vase",
+            "mask": sample_mask_b64,
+        },
+    )
+    assert response.status_code == 422
 
 
 def test_add_object_by_reference(client, sample_image_b64):

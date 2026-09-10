@@ -78,12 +78,17 @@ export const DEFAULT_MASK_OPTIONS: MaskOptions = {
 
 export interface GenerationOptions {
   seed: number; // default 42
-  numInferenceSteps: number; // default 28
+  // No single correct default — each tool's backend is tuned differently
+  // (see OperationMeta.defaultSteps / configs/default.yaml). The store
+  // resets this to the active tool's defaultSteps on tool switch.
+  numInferenceSteps: number;
   guidanceScale?: number;
 }
 
 export const DEFAULT_GENERATION_OPTIONS: GenerationOptions = {
   seed: 42,
+  // Fallback before any tool is selected — overwritten by the active
+  // tool's defaultSteps as soon as one is (see editor-store's setActiveTool).
   numInferenceSteps: 28,
 };
 
@@ -183,6 +188,14 @@ export interface OperationMeta {
   requiresPrompt: boolean;
   /** Whether the tool needs a second reference image upload. */
   requiresReference: boolean;
+  /** Default inference-step count for this tool's backend (see
+   * configs/default.yaml) — Flux2 Klein is tuned to 4 for speed, Flux
+   * Fill/OmniPaint to 28. The API's own default (GenerationOptionsIn) is
+   * None-means-"use the backend's tuned value", but the frontend always
+   * sends an explicit numInferenceSteps, so this is what keeps the Steps
+   * slider (and what actually gets sent) matched to the selected tool's
+   * model instead of one global value overriding every backend. */
+  defaultSteps: number;
 }
 
 export const OPERATIONS: OperationMeta[] = [
@@ -197,6 +210,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: true,
     requiresPrompt: false,
     requiresReference: false,
+    defaultSteps: 28,
   },
   {
     id: "replace_object",
@@ -209,6 +223,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: true,
     requiresPrompt: true,
     requiresReference: false,
+    defaultSteps: 28,
   },
   {
     id: "replace_background",
@@ -221,6 +236,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
+    defaultSteps: 4,
   },
   {
     id: "add_object_by_prompt",
@@ -233,6 +249,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: true,
     requiresPrompt: true,
     requiresReference: false,
+    defaultSteps: 4,
   },
   {
     id: "add_object_by_reference",
@@ -245,6 +262,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: true,
     requiresPrompt: false,
     requiresReference: true,
+    defaultSteps: 28,
   },
   {
     id: "prompt_edit",
@@ -257,6 +275,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
+    defaultSteps: 4,
   },
   {
     id: "outpaint",
@@ -269,6 +288,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
+    defaultSteps: 28,
   },
   {
     id: "upscale",
@@ -281,6 +301,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: false,
     requiresPrompt: false,
     requiresReference: false,
+    defaultSteps: 28,
   },
   {
     id: "generate_image",
@@ -293,6 +314,7 @@ export const OPERATIONS: OperationMeta[] = [
     allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
+    defaultSteps: 4,
   },
 ];
 

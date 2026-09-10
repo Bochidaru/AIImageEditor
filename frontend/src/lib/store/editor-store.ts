@@ -9,6 +9,7 @@ import {
   ImageSize,
   MaskOptions,
   OperationId,
+  OPERATIONS,
   OutpaintMargins,
   ProcessingStatus,
   SelectionPrompt,
@@ -190,18 +191,30 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setReferenceMaskPreview: (mask) => set({ referenceMaskPreview: mask }),
 
   setActiveTool: (tool) =>
-    set((state) => ({
-      activeTool: tool,
-      selection: null,
-      maskPreview: null,
-      candidateMasks: [],
-      placement: null,
-      // Clear a stale error overlay from the previous tool, but don't
-      // stomp an in-flight "processing" run just because the user switched
-      // tools while it's still going.
-      status: state.status === "error" ? "idle" : state.status,
-      errorMessage: null,
-    })),
+    set((state) => {
+      // Each tool's backend is tuned to a different step count (Flux2
+      // Klein: 4, Flux Fill/OmniPaint: 28 — see OperationMeta.defaultSteps).
+      // Reset to that tool's default on switch instead of carrying over
+      // whatever the previous tool's slider was left at, which would
+      // otherwise silently override every backend's own tuned value.
+      const defaultSteps = OPERATIONS.find((op) => op.id === tool)?.defaultSteps;
+      return {
+        activeTool: tool,
+        selection: null,
+        maskPreview: null,
+        candidateMasks: [],
+        placement: null,
+        // Clear a stale error overlay from the previous tool, but don't
+        // stomp an in-flight "processing" run just because the user switched
+        // tools while it's still going.
+        status: state.status === "error" ? "idle" : state.status,
+        errorMessage: null,
+        generationOptions:
+          defaultSteps !== undefined
+            ? { ...state.generationOptions, numInferenceSteps: defaultSteps }
+            : state.generationOptions,
+      };
+    }),
 
   setSelection: (selection) => set({ selection }),
   setPlacement: (box) => set({ placement: box }),
