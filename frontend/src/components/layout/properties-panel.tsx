@@ -121,25 +121,27 @@ export function PropertiesPanel() {
           break;
         }
         case "replace_background": {
+          // No mask/selection: Flux2 Klein edits directly from the prompt
+          // instruction (see operations/background_replacement.py).
           const result = await api.replaceBackground({
             image: activeImage,
-            foregroundSelection: pixelSelection,
             prompt,
-            maskOptions,
             generationOptions,
           });
-          resolveEdit(meta.id, result);
+          resolveGeneration(meta.id, result);
           break;
         }
         case "add_object_by_prompt": {
+          // No mask: placement (if any) only steers the instruction's
+          // wording (see object_insertion.py's by_prompt), it isn't
+          // resolved into a mask.
           const result = await api.addObjectByPrompt({
             image: activeImage,
             placement: pixelPlacement,
             prompt,
-            maskOptions,
             generationOptions,
           });
-          resolveEdit(meta.id, result);
+          resolveGeneration(meta.id, result);
           break;
         }
         case "add_object_by_reference": {
@@ -233,13 +235,17 @@ export function PropertiesPanel() {
 
       <Separator />
 
-      {meta.requiresMask && (
+      {meta.allowsMask && (
         <div className="space-y-1.5">
-          <Label className="text-xs font-medium text-muted-foreground">Selection</Label>
+          <Label className="text-xs font-medium text-muted-foreground">
+            Selection{!meta.requiresMask && " (optional)"}
+          </Label>
           <p className="text-xs text-muted-foreground">
             {hasPlacement
               ? "Region selected on canvas."
-              : "Click a point, or drag a box on the canvas to select a region."}
+              : meta.requiresMask
+                ? "Click a point, or drag a box on the canvas to select a region."
+                : "Optionally drag a box on the canvas to steer where the object is placed."}
           </p>
         </div>
       )}

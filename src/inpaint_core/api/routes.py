@@ -131,34 +131,29 @@ def replace_object(
     return _edit_response(result)
 
 
-@router.post("/replace-background", response_model=EditResponse)
+@router.post("/replace-background", response_model=GenerationResponse)
 def replace_background(
     body: ReplaceBackgroundRequest, processor: ImageProcessor = Depends(get_processor)
-) -> EditResponse:
+) -> GenerationResponse:
     result = processor.replace_background(
         decode_image(body.image),
         body.prompt,
-        foreground_selection=_selection(body.foreground_selection),
-        foreground_mask=decode_mask(body.foreground_mask) if body.foreground_mask else None,
-        mask_options=body.mask_options.to_domain() if body.mask_options else None,
         generation_options=body.generation_options.to_domain() if body.generation_options else None,
     )
-    return _edit_response(result)
+    return _generation_response(result)
 
 
-@router.post("/add-object/prompt", response_model=EditResponse)
+@router.post("/add-object/prompt", response_model=GenerationResponse)
 def add_object_by_prompt(
     body: AddObjectByPromptRequest, processor: ImageProcessor = Depends(get_processor)
-) -> EditResponse:
+) -> GenerationResponse:
     result = processor.add_object_by_prompt(
         decode_image(body.image),
         body.prompt,
         placement=body.placement.to_domain() if body.placement else None,
-        mask=decode_mask(body.mask) if body.mask else None,
-        mask_options=body.mask_options.to_domain() if body.mask_options else None,
         generation_options=body.generation_options.to_domain() if body.generation_options else None,
     )
-    return _edit_response(result)
+    return _generation_response(result)
 
 
 @router.post("/add-object/reference", response_model=EditResponse)

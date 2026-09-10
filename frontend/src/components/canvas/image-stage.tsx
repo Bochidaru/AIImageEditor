@@ -73,7 +73,7 @@ export function ImageStage() {
   const meta = OPERATIONS.find((op) => op.id === activeTool);
   const usesPlacement =
     activeTool === "add_object_by_prompt" || activeTool === "add_object_by_reference";
-  const interactive = Boolean(meta?.requiresMask) && status !== "processing";
+  const interactive = Boolean(meta?.allowsMask) && status !== "processing";
   const showingResult = useEditorStore((s) => s.historyIndex) >= 0;
 
   const recomputeRenderedRect = React.useCallback(() => {

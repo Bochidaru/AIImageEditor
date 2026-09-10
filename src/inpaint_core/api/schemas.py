@@ -106,12 +106,14 @@ class SegmentRequest(BaseModel):
 
 
 class _ImageEditRequestBase(BaseModel):
-    """Fields shared by every operation that edits an existing image.
+    """Fields shared by every operation that edits an existing image via a
+    mask (selection, or placement + mask) rather than a direct prompt-only
+    instruction edit.
 
     Deliberately does NOT include a `selection`/`mask`-shaped field: each
-    operation locates its region differently (selection, foreground_selection
-    + foreground_mask, or placement + mask), so those stay on the individual
-    subclasses below rather than being faked into a common shape.
+    operation locates its region differently (selection, or placement +
+    mask), so those stay on the individual subclasses below rather than
+    being faked into a common shape.
 
     Also deliberately has no `image_id` field: unlike /api/segment (fired on
     every point/box a user tries against the same unchanged image, which is
@@ -139,16 +141,26 @@ class ReplaceObjectRequest(_MaskedRequestBase):
     prompt: str
 
 
-class ReplaceBackgroundRequest(_ImageEditRequestBase):
+class ReplaceBackgroundRequest(BaseModel):
+    """No mask/selection: operations/background_replacement.py now edits
+    directly from a prompt instruction (Flux2 Klein) instead of compositing
+    over an inverted foreground mask."""
+
+    image: str
     prompt: str
-    foreground_selection: SelectionIn | None = None
-    foreground_mask: str | None = None
+    generation_options: GenerationOptionsIn | None = None
 
 
-class AddObjectByPromptRequest(_ImageEditRequestBase):
+class AddObjectByPromptRequest(BaseModel):
+    """No mask/mask_options: operations/object_insertion.py's by_prompt now
+    edits directly from a prompt instruction (Flux2 Klein); `placement` only
+    steers the instruction's wording (see _placement_description), it is not
+    resolved into a mask."""
+
+    image: str
     prompt: str
     placement: BoxPromptIn | None = None
-    mask: str | None = None
+    generation_options: GenerationOptionsIn | None = None
 
 
 class AddObjectByReferenceRequest(_ImageEditRequestBase):

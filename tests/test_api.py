@@ -192,16 +192,16 @@ def test_replace_object_rejects_blank_prompt(client, sample_image_b64, sample_ma
     assert response.status_code == 400
 
 
-def test_replace_background_inverts_mask(client, sample_image_b64, sample_mask_b64):
+def test_replace_background_direct_prompt_edit(client, sample_image_b64):
     response = client.post(
         "/api/replace-background",
         json={
             "image": sample_image_b64,
-            "foreground_mask": sample_mask_b64,
             "prompt": "a beach",
         },
     )
     assert response.status_code == 200
+    assert "mask" not in response.json()
 
 
 def test_add_object_by_prompt_with_placement_box(client, sample_image_b64):
@@ -214,6 +214,7 @@ def test_add_object_by_prompt_with_placement_box(client, sample_image_b64):
         },
     )
     assert response.status_code == 200
+    assert "mask" not in response.json()
 
 
 def test_add_object_by_reference(client, sample_image_b64):

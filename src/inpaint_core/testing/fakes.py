@@ -93,7 +93,6 @@ def build_fake_processor(*, max_image_side: int = 2048) -> ImageProcessor:
         segmenter=segmenter,
         flux_fill=backend,
         omnipaint=backend,
-        flux_kontext=backend,
-        generator=backend,
+        flux2_klein=backend,
         upscaler=backend,
     )

@@ -209,42 +209,38 @@ export async function replaceObject(args: MaskedEditArgs & { prompt: string }): 
   return toEditResult(body);
 }
 
+// replace-background and add-object/prompt edit directly from a prompt
+// instruction (Flux2 Klein) instead of resolving a mask server-side — see
+// operations/background_replacement.py and object_insertion.py's by_prompt
+// — so both return a GenerationResult (image + seed, no mask) rather than
+// an EditResult, and take no selection/mask/maskOptions.
+
 export async function replaceBackground(args: {
   image: string;
-  foregroundSelection?: SelectionPrompt;
-  foregroundMask?: string;
-  maskOptions?: MaskOptions;
-  generationOptions?: GenerationOptions;
   prompt: string;
-}): Promise<EditResult> {
-  const body = await post<EditResponseBody>("/api/replace-background", {
+  generationOptions?: GenerationOptions;
+}): Promise<GenerationResult> {
+  const body = await post<GenerationResponseBody>("/api/replace-background", {
     image: args.image,
     prompt: args.prompt,
-    foreground_selection: args.foregroundSelection ? selectionBody(args.foregroundSelection) : null,
-    foreground_mask: args.foregroundMask ?? null,
-    mask_options: args.maskOptions ? maskOptionsBody(args.maskOptions) : null,
     generation_options: args.generationOptions ? generationOptionsBody(args.generationOptions) : null,
   });
-  return toEditResult(body);
+  return toGenerationResult(body);
 }
 
 export async function addObjectByPrompt(args: {
   image: string;
   placement?: BoxPrompt;
-  mask?: string;
   prompt: string;
-  maskOptions?: MaskOptions;
   generationOptions?: GenerationOptions;
-}): Promise<EditResult> {
-  const body = await post<EditResponseBody>("/api/add-object/prompt", {
+}): Promise<GenerationResult> {
+  const body = await post<GenerationResponseBody>("/api/add-object/prompt", {
     image: args.image,
     prompt: args.prompt,
     placement: args.placement ? boxBody(args.placement) : null,
-    mask: args.mask ?? null,
-    mask_options: args.maskOptions ? maskOptionsBody(args.maskOptions) : null,
     generation_options: args.generationOptions ? generationOptionsBody(args.generationOptions) : null,
   });
-  return toEditResult(body);
+  return toGenerationResult(body);
 }
 
 export async function addObjectByReference(args: {

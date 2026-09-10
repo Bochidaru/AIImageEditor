@@ -170,8 +170,15 @@ export interface OperationMeta {
   model: string;
   /** Whether the tool needs a source image loaded on the canvas first. */
   requiresImage: boolean;
-  /** Whether the tool needs a mask/selection (point, box, or drawn). */
+  /** Whether the tool needs a mask/selection (point, box, or drawn) before
+   * it can run — blocks the Run button and shows the "missing selection"
+   * hint when true and none is present. */
   requiresMask: boolean;
+  /** Whether the tool accepts a mask/selection/placement at all — gates
+   * canvas interactivity (image-stage.tsx). True for every tool where
+   * requiresMask is true, plus tools where a selection is optional (e.g.
+   * add_object_by_prompt's placement only steers wording, never required). */
+  allowsMask: boolean;
   /** Whether the tool needs a free-text prompt. */
   requiresPrompt: boolean;
   /** Whether the tool needs a second reference image upload. */
@@ -187,6 +194,7 @@ export const OPERATIONS: OperationMeta[] = [
     model: "OmniPaint",
     requiresImage: true,
     requiresMask: true,
+    allowsMask: true,
     requiresPrompt: false,
     requiresReference: false,
   },
@@ -198,6 +206,7 @@ export const OPERATIONS: OperationMeta[] = [
     model: "FLUX Fill",
     requiresImage: true,
     requiresMask: true,
+    allowsMask: true,
     requiresPrompt: true,
     requiresReference: false,
   },
@@ -205,10 +214,11 @@ export const OPERATIONS: OperationMeta[] = [
     id: "replace_background",
     label: "Replace Background",
     shortLabel: "Background",
-    description: "Keep the selected foreground, regenerate everything else.",
-    model: "FLUX Fill",
+    description: "Regenerate everything but the main subject, described by a prompt.",
+    model: "FLUX.2 Klein",
     requiresImage: true,
-    requiresMask: true,
+    requiresMask: false,
+    allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
   },
@@ -216,10 +226,11 @@ export const OPERATIONS: OperationMeta[] = [
     id: "add_object_by_prompt",
     label: "Add Object (Prompt)",
     shortLabel: "Add · Prompt",
-    description: "Place a new object described by text into a chosen region.",
-    model: "FLUX Fill",
+    description: "Place a new object described by text — optionally drag a box for where.",
+    model: "FLUX.2 Klein",
     requiresImage: true,
-    requiresMask: true,
+    requiresMask: false,
+    allowsMask: true,
     requiresPrompt: true,
     requiresReference: false,
   },
@@ -231,6 +242,7 @@ export const OPERATIONS: OperationMeta[] = [
     model: "OmniPaint",
     requiresImage: true,
     requiresMask: true,
+    allowsMask: true,
     requiresPrompt: false,
     requiresReference: true,
   },
@@ -239,9 +251,10 @@ export const OPERATIONS: OperationMeta[] = [
     label: "Prompt Edit",
     shortLabel: "Edit",
     description: "Edit the whole image by describing the change, no mask needed.",
-    model: "FLUX Kontext",
+    model: "FLUX.2 Klein",
     requiresImage: true,
     requiresMask: false,
+    allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
   },
@@ -253,6 +266,7 @@ export const OPERATIONS: OperationMeta[] = [
     model: "FLUX Fill",
     requiresImage: true,
     requiresMask: false,
+    allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
   },
@@ -264,6 +278,7 @@ export const OPERATIONS: OperationMeta[] = [
     model: "Real-ESRGAN",
     requiresImage: true,
     requiresMask: false,
+    allowsMask: false,
     requiresPrompt: false,
     requiresReference: false,
   },
@@ -272,9 +287,10 @@ export const OPERATIONS: OperationMeta[] = [
     label: "Generate Image",
     shortLabel: "Generate",
     description: "Create a new image from a text prompt.",
-    model: "FLUX.1-dev",
+    model: "FLUX.2 Klein",
     requiresImage: false,
     requiresMask: false,
+    allowsMask: false,
     requiresPrompt: true,
     requiresReference: false,
   },

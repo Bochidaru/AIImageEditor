@@ -9,6 +9,7 @@ from ..types import (
     BoxPrompt,
     EditResult,
     GenerationOptions,
+    GenerationResult,
     ImageArray,
     MaskArray,
     MaskOptions,

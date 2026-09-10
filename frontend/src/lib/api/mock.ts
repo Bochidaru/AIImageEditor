@@ -106,6 +106,19 @@ function buildResult(mode: string, options: GenerationOptions, ms: number): Edit
   };
 }
 
+// Mirrors buildResult for the prompt-only-edit operations (replace-background,
+// add-object/prompt) which edit directly from a prompt instruction and never
+// resolve a mask server-side — see operations/background_replacement.py and
+// object_insertion.py's by_prompt.
+function buildGenerationResult(mode: string, options: GenerationOptions, ms: number): GenerationResult {
+  const seed = seedFromOptions(options);
+  return {
+    image: tintedPlaceholder(seed + mode.length),
+    seed,
+    metadata: { mode, stages: { [mode]: stage(ms) } },
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Image registration (mock: instant, no real caching needed)
 // ---------------------------------------------------------------------------
@@ -167,35 +180,28 @@ export async function replaceObject(
 export async function replaceBackground(
   args: {
     image: string;
-    foregroundSelection?: SelectionPrompt;
-    foregroundMask?: string;
-    maskOptions?: MaskOptions;
-    generationOptions?: GenerationOptions;
     prompt: string;
+    generationOptions?: GenerationOptions;
   },
-): Promise<EditResult> {
-  requireExactlyOne(args.foregroundSelection, args.foregroundMask, "foregroundSelection", "foregroundMask");
+): Promise<GenerationResult> {
   requirePrompt(args.prompt);
   await wait(3800);
   maybeFail("Background replacement");
-  return buildResult("background_replacement", args.generationOptions ?? defaultGen(), 3800);
+  return buildGenerationResult("background_replacement", args.generationOptions ?? defaultGen(), 3800);
 }
 
 export async function addObjectByPrompt(
   args: {
     image: string;
     placement?: BoxPrompt;
-    mask?: string;
     prompt: string;
-    maskOptions?: MaskOptions;
     generationOptions?: GenerationOptions;
   },
-): Promise<EditResult> {
-  requireExactlyOne(args.placement, args.mask, "placement", "mask");
+): Promise<GenerationResult> {
   requirePrompt(args.prompt);
   await wait(3100);
   maybeFail("Add object");
-  return buildResult("object_insertion_prompt", args.generationOptions ?? defaultGen(), 3100);
+  return buildGenerationResult("object_insertion_prompt", args.generationOptions ?? defaultGen(), 3100);
 }
 
 export async function addObjectByReference(
@@ -224,7 +230,7 @@ export async function promptEdit(
   await wait(2900);
   maybeFail("Prompt edit");
   const seed = seedFromOptions(generationOptions ?? defaultGen());
-  return { image: tintedPlaceholder(seed + 11), seed, metadata: { backend: "flux_kontext" } };
+  return { image: tintedPlaceholder(seed + 11), seed, metadata: { backend: "flux2_klein" } };
 }
 
 export async function generateImage(
@@ -240,7 +246,7 @@ export async function generateImage(
   return {
     image: tintedPlaceholder(seed + width + height),
     seed,
-    metadata: { backend: "flux", width, height },
+    metadata: { backend: "flux2_klein", width, height },
   };
 }
 
