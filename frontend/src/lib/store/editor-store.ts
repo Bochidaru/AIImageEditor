@@ -32,6 +32,15 @@ export interface HistoryEntry {
  * session. Mirrors the backend's ImageCache max_entries cap. */
 const MAX_HISTORY_ENTRIES = 30;
 
+/** Each tool's backend is tuned to a different step count (Flux2 Klein: 4,
+ * Flux Fill/OmniPaint: 28 — see OperationMeta.defaultSteps). Single shared
+ * lookup used by every action that needs to apply or re-apply a tool's tuned
+ * default, so the "which default does this tool get" question has exactly
+ * one answer instead of being independently re-derived per call site. */
+function defaultStepsFor(tool: OperationId | null): number | undefined {
+  return OPERATIONS.find((op) => op.id === tool)?.defaultSteps;
+}
+
 interface EditorState {
   // Canvas
   sourceImage: string | null;
@@ -70,15 +79,15 @@ interface EditorState {
   // Options (shared across tools that use them)
   maskOptions: MaskOptions;
   generationOptions: GenerationOptions;
-  /** True once the user has manually dragged the Steps slider (via
-   * setNumInferenceSteps) for the current source image. While true,
-   * setActiveTool leaves numInferenceSteps alone on every tool switch
-   * instead of overwriting it with the newly-selected tool's tuned
-   * default — otherwise a manual override only survives until the next
-   * tool switch, however many switches away that is. Reset to false by
-   * setSourceImage (a fresh editing session should start from each
-   * tool's own tuned default again). */
-  stepsCustomized: boolean;
+  /** Per-tool manual Steps overrides, keyed by OperationId. A tool present
+   * here (with a value different from its own tuned default) keeps that
+   * value across any number of tool switches; a tool absent from this map
+   * always falls back to its own tuned default (OperationMeta.defaultSteps)
+   * — so customizing Steps for one tool never leaks into a different tool
+   * the user hasn't touched, including one selected for the first time.
+   * Cleared entirely by setSourceImage (a fresh editing session starts
+   * every tool back at its own tuned default). */
+  customStepsByTool: Partial<Record<OperationId, number>>;
   upscaleOptions: UpscaleOptions;
   outpaintMargins: OutpaintMargins;
   placement: BoxPrompt | null;
@@ -107,7 +116,6 @@ interface EditorState {
   setPrompt: (prompt: string) => void;
   setMaskOptions: (options: Partial<MaskOptions>) => void;
   setGenerationOptions: (options: Partial<GenerationOptions>) => void;
-  setNumInferenceSteps: (steps: number) => void;
   setUpscaleOptions: (options: Partial<UpscaleOptions>) => void;
   setOutpaintMargins: (margins: Partial<OutpaintMargins>) => void;
   setCandidateMasks: (masks: string[], bestIndex: number) => void;
@@ -140,7 +148,7 @@ const initial = {
   selectedMaskIndex: 0,
   maskOptions: DEFAULT_MASK_OPTIONS,
   generationOptions: DEFAULT_GENERATION_OPTIONS,
-  stepsCustomized: false,
+  customStepsByTool: {},
   upscaleOptions: DEFAULT_UPSCALE_OPTIONS,
   outpaintMargins: { left: 0, top: 0, right: 0, bottom: 0 },
   placement: null,
@@ -185,15 +193,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
         selection: null,
         maskPreview: null,
         candidateMasks: [],
-        stepsCustomized: false,
-        // The flag reset above only affects future tool switches — without
-        // this, the Steps slider would keep showing a stale value carried
-        // over from the previous image until the user next touches a tool.
+        // A fresh editing session starts every tool back at its own tuned
+        // default — without this, the Steps slider would keep showing a
+        // value customized for the previous image.
+        customStepsByTool: {},
         generationOptions: {
           ...state.generationOptions,
-          numInferenceSteps:
-            OPERATIONS.find((op) => op.id === state.activeTool)?.defaultSteps ??
-            state.generationOptions.numInferenceSteps,
+          numInferenceSteps: defaultStepsFor(state.activeTool) ?? state.generationOptions.numInferenceSteps,
         },
       })),
 
@@ -213,18 +219,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
 
   setActiveTool: (tool) =>
     set((state) => {
-      // Each tool's backend is tuned to a different step count (Flux2
-      // Klein: 4, Flux Fill/OmniPaint: 28 — see OperationMeta.defaultSteps).
-      // Apply the newly-selected tool's default UNLESS the user has
-      // manually touched the Steps slider this session (stepsCustomized).
-      // Keying this off "did the user customize it" rather than "did the
-      // tool identity change" means a manual override survives any number
-      // of tool switches, not just protects against re-clicking the same
-      // tool — switching away to compare another tool's settings and back
-      // no longer silently wipes it either.
-      const defaultSteps = state.stepsCustomized
-        ? undefined
-        : OPERATIONS.find((op) => op.id === tool)?.defaultSteps;
+      // Use this tool's own remembered override if it has one, else its
+      // tuned default — keyed per-tool (customStepsByTool) so a manual
+      // Steps edit for one tool never leaks into a different tool the user
+      // hasn't touched, including one being selected for the first time.
+      const steps = (tool !== null ? state.customStepsByTool[tool] : undefined) ?? defaultStepsFor(tool);
       return {
         activeTool: tool,
         selection: null,
@@ -237,8 +236,8 @@ export const useEditorStore = create<EditorState>((set, get) => {
         status: state.status === "error" ? "idle" : state.status,
         errorMessage: null,
         generationOptions:
-          defaultSteps !== undefined
-            ? { ...state.generationOptions, numInferenceSteps: defaultSteps }
+          steps !== undefined
+            ? { ...state.generationOptions, numInferenceSteps: steps }
             : state.generationOptions,
       };
     }),
@@ -250,14 +249,24 @@ export const useEditorStore = create<EditorState>((set, get) => {
   setMaskOptions: (options) =>
     set((state) => ({ maskOptions: { ...state.maskOptions, ...options } })),
   setGenerationOptions: (options) =>
-    set((state) => ({ generationOptions: { ...state.generationOptions, ...options } })),
-  // Distinct from setGenerationOptions: marks stepsCustomized so
-  // setActiveTool stops overwriting this value on future tool switches.
-  setNumInferenceSteps: (steps) =>
-    set((state) => ({
-      generationOptions: { ...state.generationOptions, numInferenceSteps: steps },
-      stepsCustomized: true,
-    })),
+    set((state) => {
+      const generationOptions = { ...state.generationOptions, ...options };
+      // The single write path for numInferenceSteps (the Steps slider goes
+      // through this same action) — record/clear this tool's override here
+      // so no other call site can change the value without the tracking
+      // that setActiveTool depends on going stale.
+      if (options.numInferenceSteps === undefined || state.activeTool === null) {
+        return { generationOptions };
+      }
+      const customStepsByTool = { ...state.customStepsByTool };
+      if (options.numInferenceSteps === defaultStepsFor(state.activeTool)) {
+        // Back at this tool's own default — nothing to remember.
+        delete customStepsByTool[state.activeTool];
+      } else {
+        customStepsByTool[state.activeTool] = options.numInferenceSteps;
+      }
+      return { generationOptions, customStepsByTool };
+    }),
   setUpscaleOptions: (options) =>
     set((state) => ({ upscaleOptions: { ...state.upscaleOptions, ...options } })),
   setOutpaintMargins: (margins) =>
