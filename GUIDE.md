@@ -1,5 +1,9 @@
 # GUIDE.md — Hướng dẫn cài đặt & chạy dự án ImageEditor
 
+> Đây là bản hướng dẫn tiếng Việt, chi tiết theo từng bước. Tài liệu tham
+> chiếu chính thức (tiếng Anh) là [README.md](README.md) — nếu hai tài liệu
+> có chỗ nào mâu thuẫn, hãy tin theo README.md.
+
 ## Mục lục
 
 1. [Tổng quan kiến trúc](#1-tổng-quan-kiến-trúc)
@@ -392,7 +396,7 @@ ImageEditor/
 │       ├── config.py        # AppConfig dataclass
 │       └── testing/         # Fake backends cho testing
 ├── tests/                   # Unit tests (pytest)
-├── weights/                 # OmniPaint LoRA weights (tải về tự động)
+├── weights/                 # Checkpoint Real-ESRGAN (tải về tự động; OmniPaint LoRA nằm trong HF cache, không phải đây)
 ├── third_party/
 │   └── OmniPaint/           # OmniPaint source (clone bởi install_omnipaint.py)
 ├── environment.yml          # Conda environment spec
@@ -495,7 +499,7 @@ cd frontend && npm run dev
 # Terminal 1:
 conda activate imageinpaint && python scripts/run_api.py --config configs/default.yaml
 # Terminal 2:
-cd frontend && npm run dev
+cd frontend && npm run build && npm run start
 
 # ===== KIỂM TRA =====
 python scripts/check_environment.py --require-cuda  # kiem tra moi truong

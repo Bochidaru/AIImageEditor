@@ -3,6 +3,9 @@
 An extensible image-editing core with a thin `ImageProcessor` facade. Business
 operations are separated from model-specific code.
 
+> For a step-by-step setup/run walkthrough (Vietnamese), see [GUIDE.md](GUIDE.md).
+> This README is the reference doc — if the two ever disagree, this one wins.
+
 ## Architecture
 
 ```text
@@ -46,15 +49,16 @@ return the model's complete generated image after padding is removed.
 ```bash
 conda env create -f environment.yml || conda env update -f environment.yml --prune
 conda activate imageinpaint
-pip install -e .
+pip install -e . --no-deps
 pip install git+https://github.com/facebookresearch/sam2.git
 python scripts/check_environment.py --require-cuda
 ```
 
-The official OmniPaint repository is already stored at
-`third_party/OmniPaint`, so no additional clone/install script is needed. FLUX
-and OmniPaint repositories may require Hugging Face access approval and an
-authenticated `HF_TOKEN`.
+`third_party/OmniPaint` is gitignored, not vendored — clone the official
+OmniPaint repository there with `python scripts/install_omnipaint.py`
+(run once; it errors if the directory already exists). FLUX and OmniPaint
+repositories may require Hugging Face access approval and an authenticated
+`HF_TOKEN`.
 
 Do **not** run `third_party/OmniPaint/scripts/setup.sh` inside this environment.
 That upstream script pins Diffusers 0.31 and PEFT 0.10, while this project uses
