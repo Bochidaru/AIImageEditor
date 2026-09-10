@@ -46,6 +46,11 @@ interface EditorState {
    * activeImage changes, same as activeImageId. */
   activeImageSize: ImageSize | null;
   referenceImage: string | null;
+  /** Backend image_id for `referenceImage`, once registered via POST
+   * /api/images — same caching purpose as activeImageId, so trying several
+   * points against the same reference photo doesn't re-upload it each time.
+   * Reset to null whenever referenceImage changes. */
+  referenceImageId: string | null;
   /** Point selection made on referenceImage (Add Object · Reference), used
    * to isolate one subject out of a reference photo that has several. */
   referenceSelection: SelectionPrompt | null;
@@ -83,6 +88,7 @@ interface EditorState {
   setActiveImageId: (imageId: string | null) => void;
   setActiveImageSize: (size: ImageSize) => void;
   setReferenceImage: (dataUrl: string | null) => void;
+  setReferenceImageId: (imageId: string | null) => void;
   setReferenceSelection: (selection: SelectionPrompt | null) => void;
   setReferenceMaskPreview: (mask: string | null) => void;
   setActiveTool: (tool: OperationId | null) => void;
@@ -113,6 +119,7 @@ const initial = {
   activeImageId: null,
   activeImageSize: null,
   referenceImage: null,
+  referenceImageId: null,
   referenceSelection: null,
   referenceMaskPreview: null,
   activeTool: null,
@@ -172,7 +179,13 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setActiveImageSize: (size) => set({ activeImageSize: size }),
 
     setReferenceImage: (dataUrl) =>
-      set({ referenceImage: dataUrl, referenceSelection: null, referenceMaskPreview: null }),
+      set({
+        referenceImage: dataUrl,
+        referenceImageId: null,
+        referenceSelection: null,
+        referenceMaskPreview: null,
+      }),
+    setReferenceImageId: (imageId) => set({ referenceImageId: imageId }),
     setReferenceSelection: (selection) => set({ referenceSelection: selection }),
     setReferenceMaskPreview: (mask) => set({ referenceMaskPreview: mask }),
 

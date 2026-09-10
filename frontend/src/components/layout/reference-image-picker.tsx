@@ -125,6 +125,7 @@ function ReferenceCanvas({
 export function ReferenceImagePicker() {
   const referenceImage = useEditorStore((s) => s.referenceImage);
   const setReferenceImage = useEditorStore((s) => s.setReferenceImage);
+  const setReferenceImageId = useEditorStore((s) => s.setReferenceImageId);
   const referenceSelection = useEditorStore((s) => s.referenceSelection);
   const setReferenceSelection = useEditorStore((s) => s.setReferenceSelection);
   const referenceMaskPreview = useEditorStore((s) => s.referenceMaskPreview);
@@ -133,6 +134,41 @@ export function ReferenceImagePicker() {
   const [imageSize, setImageSize] = React.useState<ImageSize | null>(null);
   const [segmenting, setSegmenting] = React.useState(false);
   const [pickerOpen, setPickerOpen] = React.useState(false);
+  // In-flight /api/images registration, keyed by image, so trying several
+  // points against the same reference photo shares one upload instead of
+  // each click re-sending the full base64 payload — mirrors image-stage.tsx's
+  // ensureImageId for the main canvas image.
+  const pendingRegistration = React.useRef<{ image: string; promise: Promise<string | undefined> } | null>(
+    null,
+  );
+
+  async function ensureReferenceImageId(image: string): Promise<string | undefined> {
+    const cached = useEditorStore.getState().referenceImageId;
+    if (cached) return cached;
+
+    if (pendingRegistration.current?.image === image) {
+      return pendingRegistration.current.promise;
+    }
+
+    const promise = (async () => {
+      try {
+        const imageId = await api.registerImage(image);
+        if (useEditorStore.getState().referenceImage === image) {
+          setReferenceImageId(imageId);
+        }
+        return imageId;
+      } catch {
+        return undefined;
+      } finally {
+        if (pendingRegistration.current?.image === image) {
+          pendingRegistration.current = null;
+        }
+      }
+    })();
+
+    pendingRegistration.current = { image, promise };
+    return promise;
+  }
 
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -156,9 +192,20 @@ export function ReferenceImagePicker() {
     };
     setReferenceSelection(selection);
     setSegmenting(true);
+    const pixelSelection = toPixelSelection(selection, imageSize);
     try {
-      const pixelSelection = toPixelSelection(selection, imageSize);
-      const result = await api.segment(referenceImage, pixelSelection);
+      const imageId = await ensureReferenceImageId(referenceImage);
+      let result;
+      try {
+        result = await api.segment(referenceImage, pixelSelection, imageId);
+      } catch (error) {
+        if (!imageId) throw error;
+        // A cached image_id can go stale server-side (LRU eviction, a
+        // dev-server restart) — retry once with the image sent inline,
+        // mirroring image-stage.tsx's runSegmentation.
+        setReferenceImageId(null);
+        result = await api.segment(referenceImage, pixelSelection);
+      }
       setReferenceMaskPreview(result.masks[result.bestIndex] ?? null);
     } catch {
       toast.error("Could not select subject", { description: "Try clicking a different point." });
