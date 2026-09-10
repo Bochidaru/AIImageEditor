@@ -55,6 +55,7 @@ export function PropertiesPanel() {
   const setMaskOptions = useEditorStore((s) => s.setMaskOptions);
   const generationOptions = useEditorStore((s) => s.generationOptions);
   const setGenerationOptions = useEditorStore((s) => s.setGenerationOptions);
+  const setNumInferenceSteps = useEditorStore((s) => s.setNumInferenceSteps);
   const upscaleOptions = useEditorStore((s) => s.upscaleOptions);
   const setUpscaleOptions = useEditorStore((s) => s.setUpscaleOptions);
   const outpaintMargins = useEditorStore((s) => s.outpaintMargins);
@@ -366,7 +367,7 @@ export function PropertiesPanel() {
               min={4}
               max={50}
               step={1}
-              onValueChange={([value]) => setGenerationOptions({ numInferenceSteps: value })}
+              onValueChange={([value]) => setNumInferenceSteps(value)}
             />
           </Field>
           <Field label="Seed">
