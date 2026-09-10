@@ -3,51 +3,8 @@ import pytest
 
 from inpaint_core.config import AppConfig
 from inpaint_core.processor import ImageProcessor
-from inpaint_core.types import BoxPrompt, GenerationResult, MaskOptions, OutpaintMargins, PointPrompt, SegmentationResult, UpscaleOptions
-
-
-class FakeSegmenter:
-    def __init__(self, mask):
-        self.mask = mask
-
-    def segment(self, image, selection):
-        return SegmentationResult([self.mask], [1.0], 0)
-
-
-class FakeBackend:
-    def __init__(self):
-        self.last_mask = None
-        self.last_prompt = None
-        self.last_image_shape = None
-        self.last_reference = None
-
-    def _result(self, image, options):
-        self.last_image_shape = image.shape
-        return GenerationResult(np.full_like(image, 200), options.seed, {"backend": "fake"})
-
-    def edit(self, image, mask, prompt, options):
-        self.last_mask, self.last_prompt = mask, prompt
-        return self._result(image, options)
-
-    def remove(self, image, mask, options):
-        self.last_mask = mask
-        return self._result(image, options)
-
-    def insert(self, image, mask, reference, options):
-        self.last_mask, self.last_reference = mask, reference
-        return self._result(image, options)
-
-    def edit_image(self, image, prompt, options):
-        self.last_prompt = prompt
-        return self._result(image, options)
-
-    def generate(self, prompt, width, height, options):
-        self.last_prompt = prompt
-        return GenerationResult(np.full((height, width, 3), 200, np.uint8), options.seed)
-
-    def upscale(self, image, options):
-        output = np.repeat(np.repeat(image, options.scale, 0), options.scale, 1)
-        return GenerationResult(output, 0)
+from inpaint_core.testing import FakeBackend, FakeSegmenter
+from inpaint_core.types import BoxPrompt, MaskOptions, OutpaintMargins, PointPrompt, UpscaleOptions
 
 
 def make_processor(mask):
