@@ -185,6 +185,17 @@ def test_remove_object_requires_exactly_one_of_selection_or_mask(client, sample_
     assert "exactly one" in response.json()["detail"]
 
 
+def test_remove_object_rejects_unknown_field(client, sample_image_b64, sample_mask_b64):
+    """extra="forbid" applies repo-wide now (via _StrictModel), not just to
+    the two endpoints the mask-drop bug was originally found on — a stale
+    client's unrecognized field must 422, not be silently discarded."""
+    response = client.post(
+        "/api/remove-object",
+        json={"image": sample_image_b64, "mask": sample_mask_b64, "not_a_real_field": True},
+    )
+    assert response.status_code == 422
+
+
 def test_replace_object_forwards_prompt(client, sample_image_b64, sample_mask_b64):
     response = client.post(
         "/api/replace-object",

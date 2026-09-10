@@ -6,12 +6,25 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from ..types import BoxPrompt, GenerationOptions, MaskOptions, OutpaintMargins, PointPrompt, UpscaleOptions
 
+
+class _StrictModel(BaseModel):
+    """Base for every schema representing client-supplied input (request
+    bodies and their nested option/selection objects — NOT the response
+    schemas below, which we construct ourselves). extra="forbid" turns an
+    unrecognized field (a stale client's removed/renamed field, a typo) into
+    a clear 422 instead of Pydantic's default of silently discarding it and
+    running the request with different semantics than the caller intended.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+
 # ---------------------------------------------------------------------------
 # Selection prompts (mirrors frontend/src/lib/types.ts's `kind` discriminator)
 # ---------------------------------------------------------------------------
 
 
-class PointPromptIn(BaseModel):
+class PointPromptIn(_StrictModel):
     kind: Literal["point"] = "point"
     points: list[tuple[float, float]]
     labels: list[Literal[0, 1]]
@@ -20,7 +33,7 @@ class PointPromptIn(BaseModel):
         return PointPrompt(points=self.points, labels=list(self.labels))
 
 
-class BoxPromptIn(BaseModel):
+class BoxPromptIn(_StrictModel):
     kind: Literal["box"] = "box"
     x1: float
     y1: float
@@ -39,7 +52,7 @@ SelectionIn = Annotated[Union[PointPromptIn, BoxPromptIn], Field(discriminator="
 # ---------------------------------------------------------------------------
 
 
-class MaskOptionsIn(BaseModel):
+class MaskOptionsIn(_StrictModel):
     threshold: int = 127
     dilate: int = 0
     erode: int = 0
@@ -54,7 +67,7 @@ class MaskOptionsIn(BaseModel):
         )
 
 
-class GenerationOptionsIn(BaseModel):
+class GenerationOptionsIn(_StrictModel):
     seed: int = 42
     # None (the default) lets each backend use its own tuned step count
     # (e.g. Flux2 Klein's 4 vs Flux Fill/OmniPaint's 28 — see
@@ -71,7 +84,7 @@ class GenerationOptionsIn(BaseModel):
         )
 
 
-class OutpaintMarginsIn(BaseModel):
+class OutpaintMarginsIn(_StrictModel):
     left: int = 0
     top: int = 0
     right: int = 0
@@ -81,7 +94,7 @@ class OutpaintMarginsIn(BaseModel):
         return OutpaintMargins(left=self.left, top=self.top, right=self.right, bottom=self.bottom)
 
 
-class UpscaleOptionsIn(BaseModel):
+class UpscaleOptionsIn(_StrictModel):
     scale: int = 4
     face_enhance: bool = False
     tile: int = 0
@@ -103,13 +116,13 @@ class UpscaleOptionsIn(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-class SegmentRequest(BaseModel):
+class SegmentRequest(_StrictModel):
     image: str | None = None
     image_id: str | None = None
     selection: SelectionIn
 
 
-class _ImageEditRequestBase(BaseModel):
+class _ImageEditRequestBase(_StrictModel):
     """Fields shared by every operation that edits an existing image via a
     mask (selection, or placement + mask) rather than a direct prompt-only
     instruction edit.
@@ -145,34 +158,27 @@ class ReplaceObjectRequest(_MaskedRequestBase):
     prompt: str
 
 
-class ReplaceBackgroundRequest(BaseModel):
+class ReplaceBackgroundRequest(_StrictModel):
     """No mask/selection: operations/background_replacement.py now edits
     directly from a prompt instruction (Flux2 Klein) instead of compositing
-    over an inverted foreground mask.
-
-    extra="forbid" so a client still on the old contract (foreground_mask,
-    foreground_selection, mask_options) gets a 422 instead of having that
-    field silently dropped and getting a full-image edit it didn't ask for.
+    over an inverted foreground mask. A client still on the old contract
+    (foreground_mask, foreground_selection, mask_options) gets a 422 (via
+    _StrictModel's extra="forbid") instead of having that field silently
+    dropped and getting a full-image edit it didn't ask for.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     image: str
     prompt: str
     generation_options: GenerationOptionsIn | None = None
 
 
-class AddObjectByPromptRequest(BaseModel):
+class AddObjectByPromptRequest(_StrictModel):
     """No mask/mask_options: operations/object_insertion.py's by_prompt now
     edits directly from a prompt instruction (Flux2 Klein); `placement` only
     steers the instruction's wording (see _placement_description), it is not
-    resolved into a mask.
-
-    extra="forbid" so a client still sending `mask`/`mask_options` (the old
-    contract) gets a 422 instead of the field being silently ignored.
+    resolved into a mask. A client still sending `mask`/`mask_options` (the
+    old contract) gets a 422 instead of the field being silently ignored.
     """
-
-    model_config = ConfigDict(extra="forbid")
 
     image: str
     prompt: str
@@ -187,32 +193,32 @@ class AddObjectByReferenceRequest(_ImageEditRequestBase):
     reference_mask: str | None = None
 
 
-class PromptEditRequest(BaseModel):
+class PromptEditRequest(_StrictModel):
     image: str
     prompt: str
     generation_options: GenerationOptionsIn | None = None
 
 
-class GenerateImageRequest(BaseModel):
+class GenerateImageRequest(_StrictModel):
     prompt: str
     width: int = 1024
     height: int = 1024
     generation_options: GenerationOptionsIn | None = None
 
 
-class OutpaintRequest(BaseModel):
+class OutpaintRequest(_StrictModel):
     image: str
     prompt: str
     margins: OutpaintMarginsIn
     generation_options: GenerationOptionsIn | None = None
 
 
-class UpscaleRequest(BaseModel):
+class UpscaleRequest(_StrictModel):
     image: str
     options: UpscaleOptionsIn | None = None
 
 
-class RegisterImageRequest(BaseModel):
+class RegisterImageRequest(_StrictModel):
     image: str
 
 

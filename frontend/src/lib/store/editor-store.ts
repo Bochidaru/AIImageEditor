@@ -194,10 +194,15 @@ export const useEditorStore = create<EditorState>((set, get) => {
     set((state) => {
       // Each tool's backend is tuned to a different step count (Flux2
       // Klein: 4, Flux Fill/OmniPaint: 28 — see OperationMeta.defaultSteps).
-      // Reset to that tool's default on switch instead of carrying over
-      // whatever the previous tool's slider was left at, which would
-      // otherwise silently override every backend's own tuned value.
-      const defaultSteps = OPERATIONS.find((op) => op.id === tool)?.defaultSteps;
+      // Reset to that tool's default when actually switching to a
+      // *different* tool — but not when re-clicking the already-active one
+      // (tool-sidebar.tsx has no active-tool guard on its onClick), which
+      // would otherwise silently wipe out a manual Steps-slider override
+      // the user just set for this same tool right before running it.
+      const isSwitchingTool = tool !== state.activeTool;
+      const defaultSteps = isSwitchingTool
+        ? OPERATIONS.find((op) => op.id === tool)?.defaultSteps
+        : undefined;
       return {
         activeTool: tool,
         selection: null,
