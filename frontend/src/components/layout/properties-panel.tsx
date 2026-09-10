@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useEditorStore } from "@/lib/store/editor-store";
-import { OPERATIONS, toPixelSelection, toPixelBox } from "@/lib/types";
+import { OPERATIONS_BY_ID, toPixelSelection, toPixelBox } from "@/lib/types";
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { ReferenceImagePicker } from "@/components/layout/reference-image-picker";
@@ -66,7 +66,7 @@ export function PropertiesPanel() {
   const fail = useEditorStore((s) => s.fail);
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
-  const meta = OPERATIONS.find((op) => op.id === activeTool);
+  const meta = activeTool ? OPERATIONS_BY_ID[activeTool] : undefined;
   const isProcessing = status === "processing" || status === "segmenting";
 
   if (!activeTool || !meta) {

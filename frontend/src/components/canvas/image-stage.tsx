@@ -3,7 +3,7 @@
 import * as React from "react";
 import { toast } from "sonner";
 import { useEditorStore } from "@/lib/store/editor-store";
-import { OPERATIONS, toPixelSelection, type SelectionPrompt } from "@/lib/types";
+import { OPERATIONS_BY_ID, toPixelSelection, type SelectionPrompt } from "@/lib/types";
 import * as api from "@/lib/api";
 import { CompareSlider } from "@/components/canvas/compare-slider";
 import { computeRenderedImageRect, type RenderedImageRect } from "@/lib/image-geometry";
@@ -70,7 +70,7 @@ export function ImageStage() {
     null,
   );
 
-  const meta = OPERATIONS.find((op) => op.id === activeTool);
+  const meta = activeTool ? OPERATIONS_BY_ID[activeTool] : undefined;
   const usesPlacement =
     activeTool === "add_object_by_prompt" || activeTool === "add_object_by_reference";
   const interactive = Boolean(meta?.allowsMask) && status !== "processing";
