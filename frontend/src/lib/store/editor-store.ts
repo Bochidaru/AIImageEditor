@@ -46,6 +46,13 @@ interface EditorState {
    * activeImage changes, same as activeImageId. */
   activeImageSize: ImageSize | null;
   referenceImage: string | null;
+  /** Point selection made on referenceImage (Add Object · Reference), used
+   * to isolate one subject out of a reference photo that has several. */
+  referenceSelection: SelectionPrompt | null;
+  /** Segmentation-result mask (base64) for referenceSelection — sent as
+   * reference_mask so the backend only lifts the selected subject instead
+   * of the whole reference image. */
+  referenceMaskPreview: string | null;
 
   // Selection / mask
   activeTool: OperationId | null;
@@ -76,6 +83,8 @@ interface EditorState {
   setActiveImageId: (imageId: string | null) => void;
   setActiveImageSize: (size: ImageSize) => void;
   setReferenceImage: (dataUrl: string | null) => void;
+  setReferenceSelection: (selection: SelectionPrompt | null) => void;
+  setReferenceMaskPreview: (mask: string | null) => void;
   setActiveTool: (tool: OperationId | null) => void;
   setSelection: (selection: SelectionPrompt | null) => void;
   setPlacement: (box: BoxPrompt | null) => void;
@@ -104,6 +113,8 @@ const initial = {
   activeImageId: null,
   activeImageSize: null,
   referenceImage: null,
+  referenceSelection: null,
+  referenceMaskPreview: null,
   activeTool: null,
   selection: null,
   maskPreview: null,
@@ -160,7 +171,10 @@ export const useEditorStore = create<EditorState>((set, get) => {
     setActiveImageId: (imageId) => set({ activeImageId: imageId }),
     setActiveImageSize: (size) => set({ activeImageSize: size }),
 
-    setReferenceImage: (dataUrl) => set({ referenceImage: dataUrl }),
+    setReferenceImage: (dataUrl) =>
+      set({ referenceImage: dataUrl, referenceSelection: null, referenceMaskPreview: null }),
+    setReferenceSelection: (selection) => set({ referenceSelection: selection }),
+    setReferenceMaskPreview: (mask) => set({ referenceMaskPreview: mask }),
 
   setActiveTool: (tool) =>
     set((state) => ({

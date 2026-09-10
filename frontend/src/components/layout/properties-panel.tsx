@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { CircleNotch, Sparkle, SlidersHorizontal, X, UploadSimple } from "@phosphor-icons/react";
+import { CircleNotch, Sparkle, SlidersHorizontal, X } from "@phosphor-icons/react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -19,7 +19,7 @@ import { useEditorStore } from "@/lib/store/editor-store";
 import { OPERATIONS, toPixelSelection, toPixelBox } from "@/lib/types";
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
-import { readFileAsDataUrl, validateImageFile } from "@/lib/image-file";
+import { ReferenceImagePicker } from "@/components/layout/reference-image-picker";
 
 function Field({
   label,
@@ -48,7 +48,7 @@ export function PropertiesPanel() {
   const placement = useEditorStore((s) => s.placement);
   const activeImageSize = useEditorStore((s) => s.activeImageSize);
   const referenceImage = useEditorStore((s) => s.referenceImage);
-  const setReferenceImage = useEditorStore((s) => s.setReferenceImage);
+  const referenceMaskPreview = useEditorStore((s) => s.referenceMaskPreview);
   const prompt = useEditorStore((s) => s.prompt);
   const setPrompt = useEditorStore((s) => s.setPrompt);
   const maskOptions = useEditorStore((s) => s.maskOptions);
@@ -86,18 +86,6 @@ export function PropertiesPanel() {
   const missingReference = meta.requiresReference && !referenceImage;
   const missingImage = meta.requiresImage && !activeImage;
   const canRun = !missingMask && !missingPrompt && !missingReference && !missingImage && !isProcessing;
-
-  async function handleReferenceUpload(event: React.ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-    if (!file) return;
-    const error = validateImageFile(file);
-    if (error) {
-      toast.error("Reference image rejected", { description: error });
-      return;
-    }
-    setReferenceImage(await readFileAsDataUrl(file));
-  }
 
   async function run() {
     if (!activeImage || !meta) return;
@@ -160,6 +148,7 @@ export function PropertiesPanel() {
             image: activeImage,
             reference: referenceImage,
             placement: pixelPlacement,
+            referenceMask: referenceMaskPreview ?? undefined,
             maskOptions,
             generationOptions,
           });
@@ -255,29 +244,7 @@ export function PropertiesPanel() {
         </div>
       )}
 
-      {meta.requiresReference && (
-        <div className="space-y-1.5">
-          <Label className="text-xs font-medium text-muted-foreground">Reference image</Label>
-          {referenceImage ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={referenceImage}
-              alt="Reference subject to insert"
-              className="h-24 w-full rounded-md border border-border object-cover"
-            />
-          ) : null}
-          <label className="flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-dashed border-border py-2 text-xs text-muted-foreground hover:border-brand/50 hover:text-foreground">
-            <UploadSimple className="size-3.5" />
-            {referenceImage ? "Replace reference" : "Upload reference image"}
-            <input
-              type="file"
-              accept="image/png,image/jpeg,image/webp"
-              className="sr-only"
-              onChange={handleReferenceUpload}
-            />
-          </label>
-        </div>
-      )}
+      {meta.requiresReference && <ReferenceImagePicker />}
 
       {meta.requiresPrompt && (
         <div className="space-y-1.5">
