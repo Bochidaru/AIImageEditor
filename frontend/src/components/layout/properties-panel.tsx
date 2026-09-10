@@ -16,7 +16,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useEditorStore } from "@/lib/store/editor-store";
-import { OPERATIONS, toPixelSelection, toPixelBox } from "@/lib/types";
+import { OPERATIONS_BY_ID, toPixelSelection, toPixelBox } from "@/lib/types";
 import * as api from "@/lib/api";
 import { ApiError } from "@/lib/api";
 import { ReferenceImagePicker } from "@/components/layout/reference-image-picker";
@@ -66,7 +66,7 @@ export function PropertiesPanel() {
   const fail = useEditorStore((s) => s.fail);
   const [mobileOpen, setMobileOpen] = React.useState(false);
 
-  const meta = OPERATIONS.find((op) => op.id === activeTool);
+  const meta = activeTool ? OPERATIONS_BY_ID[activeTool] : undefined;
   const isProcessing = status === "processing" || status === "segmenting";
 
   if (!activeTool || !meta) {
@@ -355,30 +355,32 @@ export function PropertiesPanel() {
         </details>
       )}
 
-      <details className="group rounded-md border border-border">
-        <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground marker:hidden">
-          Generation settings
-        </summary>
-        <div className="space-y-4 border-t border-border p-3">
-          <Field label="Steps" hint={String(generationOptions.numInferenceSteps)}>
-            <Slider
-              value={[generationOptions.numInferenceSteps]}
-              min={4}
-              max={50}
-              step={1}
-              onValueChange={([value]) => setGenerationOptions({ numInferenceSteps: value })}
-            />
-          </Field>
-          <Field label="Seed">
-            <input
-              type="number"
-              value={generationOptions.seed}
-              onChange={(event) => setGenerationOptions({ seed: Number(event.target.value) })}
-              className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </Field>
-        </div>
-      </details>
+      {meta.usesGenerationOptions && (
+        <details className="group rounded-md border border-border">
+          <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-muted-foreground marker:hidden">
+            Generation settings
+          </summary>
+          <div className="space-y-4 border-t border-border p-3">
+            <Field label="Steps" hint={String(generationOptions.numInferenceSteps)}>
+              <Slider
+                value={[generationOptions.numInferenceSteps]}
+                min={4}
+                max={50}
+                step={1}
+                onValueChange={([value]) => setGenerationOptions({ numInferenceSteps: value })}
+              />
+            </Field>
+            <Field label="Seed">
+              <input
+                type="number"
+                value={generationOptions.seed}
+                onChange={(event) => setGenerationOptions({ seed: Number(event.target.value) })}
+                className="h-8 w-full rounded-md border border-input bg-transparent px-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+            </Field>
+          </div>
+        </details>
+      )}
 
       <div className="mt-auto sticky bottom-0 -mx-4 border-t border-border bg-background px-4 pt-4">
         <Tooltip>

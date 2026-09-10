@@ -3,7 +3,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 import { useEditorStore } from "@/lib/store/editor-store";
-import { OPERATIONS } from "@/lib/types";
+import { OPERATIONS_BY_ID } from "@/lib/types";
 
 export function HistoryStrip() {
   const sourceImage = useEditorStore((s) => s.sourceImage);
@@ -29,7 +29,7 @@ export function HistoryStrip() {
         <Thumbnail
           key={entry.id}
           image={entry.image}
-          label={OPERATIONS.find((op) => op.id === entry.operation)?.shortLabel ?? entry.operation}
+          label={OPERATIONS_BY_ID[entry.operation].shortLabel}
           active={historyIndex === index}
           onClick={() => jumpToHistory(index)}
         />
