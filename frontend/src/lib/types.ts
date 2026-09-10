@@ -211,7 +211,7 @@ export interface OperationMeta {
 // here, so a tool added to the union without matching metadata (e.g.
 // missing defaultSteps) is a compile error instead of a silent runtime gap
 // (editor-store.ts's defaultStepsFor relies on this).
-const OPERATIONS_BY_ID: Record<OperationId, OperationMeta> = {
+export const OPERATIONS_BY_ID: Record<OperationId, OperationMeta> = {
   remove_object: {
     id: "remove_object",
     label: "Remove Object",

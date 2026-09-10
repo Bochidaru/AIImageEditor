@@ -9,7 +9,7 @@ import {
   ImageSize,
   MaskOptions,
   OperationId,
-  OPERATIONS,
+  OPERATIONS_BY_ID,
   OutpaintMargins,
   ProcessingStatus,
   SelectionPrompt,
@@ -38,7 +38,26 @@ const MAX_HISTORY_ENTRIES = 30;
  * default, so the "which default does this tool get" question has exactly
  * one answer instead of being independently re-derived per call site. */
 function defaultStepsFor(tool: OperationId | null): number | undefined {
-  return OPERATIONS.find((op) => op.id === tool)?.defaultSteps;
+  return tool !== null ? OPERATIONS_BY_ID[tool].defaultSteps : undefined;
+}
+
+/** Records or clears `tool`'s entry in customStepsByTool for a newly-set
+ * numInferenceSteps value — the single place setGenerationOptions' per-tool
+ * memory logic lives, so it reads as one step there instead of being
+ * inlined among the rest of that action's option-merging. */
+function withTrackedSteps(
+  customStepsByTool: Partial<Record<OperationId, number>>,
+  tool: OperationId,
+  numInferenceSteps: number,
+): Partial<Record<OperationId, number>> {
+  const next = { ...customStepsByTool };
+  if (numInferenceSteps === defaultStepsFor(tool)) {
+    // Back at this tool's own default — nothing to remember.
+    delete next[tool];
+  } else {
+    next[tool] = numInferenceSteps;
+  }
+  return next;
 }
 
 interface EditorState {
@@ -258,13 +277,11 @@ export const useEditorStore = create<EditorState>((set, get) => {
       if (options.numInferenceSteps === undefined || state.activeTool === null) {
         return { generationOptions };
       }
-      const customStepsByTool = { ...state.customStepsByTool };
-      if (options.numInferenceSteps === defaultStepsFor(state.activeTool)) {
-        // Back at this tool's own default — nothing to remember.
-        delete customStepsByTool[state.activeTool];
-      } else {
-        customStepsByTool[state.activeTool] = options.numInferenceSteps;
-      }
+      const customStepsByTool = withTrackedSteps(
+        state.customStepsByTool,
+        state.activeTool,
+        options.numInferenceSteps,
+      );
       return { generationOptions, customStepsByTool };
     }),
   setUpscaleOptions: (options) =>

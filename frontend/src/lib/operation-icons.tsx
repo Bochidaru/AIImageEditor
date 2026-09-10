@@ -13,7 +13,6 @@ import {
 import type { OperationId } from "@/lib/types";
 
 export const OPERATION_ICONS: Record<OperationId, Icon> = {
-  segment: MagicWand,
   remove_object: Eraser,
   replace_object: Swap,
   replace_background: Stack,
