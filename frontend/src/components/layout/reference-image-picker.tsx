@@ -2,20 +2,125 @@
 
 import * as React from "react";
 import { toast } from "sonner";
-import { UploadSimple } from "@phosphor-icons/react";
+import { UploadSimple, CursorClick } from "@phosphor-icons/react";
 import { useEditorStore } from "@/lib/store/editor-store";
 import * as api from "@/lib/api";
 import { toPixelSelection, type ImageSize } from "@/lib/types";
 import { computeRenderedImageRect, type RenderedImageRect } from "@/lib/image-geometry";
 import { readFileAsDataUrl, validateImageFile } from "@/lib/image-file";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "@/components/ui/dialog";
+
+/** Renders `image` plus its segmentation-mask overlay (if any), tracking the
+ * letterboxed rect itself so overlay + click math stay correct at any size —
+ * shared between the small thumbnail and the larger picker dialog. */
+function ReferenceCanvas({
+  image,
+  mask,
+  onImageSize,
+  onPointClick,
+  className,
+  imgClassName,
+}: {
+  image: string;
+  mask: string | null;
+  onImageSize?: (size: ImageSize) => void;
+  onPointClick?: (point: [number, number]) => void;
+  className?: string;
+  imgClassName?: string;
+}) {
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const imageRef = React.useRef<HTMLImageElement>(null);
+  const [rect, setRect] = React.useState<RenderedImageRect | null>(null);
+
+  const recomputeRect = React.useCallback(() => {
+    const container = containerRef.current;
+    const img = imageRef.current;
+    if (!container || !img) return;
+    setRect(computeRenderedImageRect(container, img));
+  }, []);
+
+  const handleLoad = React.useCallback(() => {
+    recomputeRect();
+    const img = imageRef.current;
+    if (img && img.naturalWidth && img.naturalHeight) {
+      onImageSize?.({ width: img.naturalWidth, height: img.naturalHeight });
+    }
+  }, [recomputeRect, onImageSize]);
+
+  React.useEffect(() => {
+    recomputeRect();
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(recomputeRect);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [image, recomputeRect]);
+
+  function handleClick(event: React.MouseEvent) {
+    if (!onPointClick) return;
+    const container = containerRef.current;
+    const img = imageRef.current;
+    if (!container || !img) return;
+    const liveRect = computeRenderedImageRect(container, img);
+    if (!liveRect) return;
+    const containerRect = container.getBoundingClientRect();
+    const localX = event.clientX - containerRect.left - liveRect.left;
+    const localY = event.clientY - containerRect.top - liveRect.top;
+    if (localX < 0 || localY < 0 || localX > liveRect.width || localY > liveRect.height) return;
+    onPointClick([localX / liveRect.width, localY / liveRect.height]);
+  }
+
+  return (
+    <div
+      ref={containerRef}
+      onClick={onPointClick ? handleClick : undefined}
+      className={className}
+    >
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        ref={imageRef}
+        src={image}
+        alt="Reference subject to insert"
+        className={imgClassName}
+        onLoad={handleLoad}
+      />
+      {rect && mask && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={mask}
+          alt=""
+          aria-hidden="true"
+          className="pointer-events-none absolute opacity-40 mix-blend-screen"
+          style={{
+            left: rect.left,
+            top: rect.top,
+            width: rect.width,
+            height: rect.height,
+            filter: "sepia(1) saturate(6) hue-rotate(280deg)",
+          }}
+        />
+      )}
+    </div>
+  );
+}
 
 /**
- * Reference image for Add Object (Reference): shows the whole image
- * (object-contain, not cropped) and lets the user click the specific
- * subject to lift when the reference photo has more than one — mirrors
- * the point-segmentation flow on the main canvas, scoped to this image.
- * The resulting mask is sent as reference_mask (see object_insertion.py's
- * by_reference) so the backend only lifts the clicked subject.
+ * Reference image for Add Object (Reference): the thumbnail always shows the
+ * whole image (object-contain, never cropped). Clicking it opens a larger
+ * dialog to click the specific subject to lift when the reference photo has
+ * more than one — the small thumbnail is too tight a target to click
+ * precisely. The resulting mask is sent as reference_mask (see
+ * object_insertion.py's by_reference) so the backend only lifts the clicked
+ * subject.
  */
 export function ReferenceImagePicker() {
   const referenceImage = useEditorStore((s) => s.referenceImage);
@@ -25,35 +130,9 @@ export function ReferenceImagePicker() {
   const referenceMaskPreview = useEditorStore((s) => s.referenceMaskPreview);
   const setReferenceMaskPreview = useEditorStore((s) => s.setReferenceMaskPreview);
 
-  const containerRef = React.useRef<HTMLDivElement>(null);
-  const imageRef = React.useRef<HTMLImageElement>(null);
-  const [renderedRect, setRenderedRect] = React.useState<RenderedImageRect | null>(null);
   const [imageSize, setImageSize] = React.useState<ImageSize | null>(null);
   const [segmenting, setSegmenting] = React.useState(false);
-
-  const recomputeRenderedRect = React.useCallback(() => {
-    const container = containerRef.current;
-    const img = imageRef.current;
-    if (!container || !img) return;
-    setRenderedRect(computeRenderedImageRect(container, img));
-  }, []);
-
-  const handleImageLoad = React.useCallback(() => {
-    recomputeRenderedRect();
-    const img = imageRef.current;
-    if (img && img.naturalWidth && img.naturalHeight) {
-      setImageSize({ width: img.naturalWidth, height: img.naturalHeight });
-    }
-  }, [recomputeRenderedRect]);
-
-  React.useEffect(() => {
-    recomputeRenderedRect();
-    const container = containerRef.current;
-    if (!container || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(recomputeRenderedRect);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [referenceImage, recomputeRenderedRect]);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
 
   async function handleUpload(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
@@ -68,20 +147,11 @@ export function ReferenceImagePicker() {
     setReferenceImage(await readFileAsDataUrl(file));
   }
 
-  async function handleClick(event: React.MouseEvent) {
-    const container = containerRef.current;
-    const img = imageRef.current;
-    if (!container || !img || !referenceImage || !imageSize || segmenting) return;
-    const rect = computeRenderedImageRect(container, img);
-    if (!rect) return;
-    const containerRect = container.getBoundingClientRect();
-    const localX = event.clientX - containerRect.left - rect.left;
-    const localY = event.clientY - containerRect.top - rect.top;
-    if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) return;
-
+  async function handlePointClick(point: [number, number]) {
+    if (!referenceImage || !imageSize || segmenting) return;
     const selection = {
       kind: "point" as const,
-      points: [[localX / rect.width, localY / rect.height]] as [number, number][],
+      points: [point] as [number, number][],
       labels: [1] as (0 | 1)[],
     };
     setReferenceSelection(selection);
@@ -118,46 +188,28 @@ export function ReferenceImagePicker() {
       </div>
 
       {referenceImage && (
-        <div
-          ref={containerRef}
-          onClick={handleClick}
-          className="relative flex h-32 w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/20 cursor-crosshair"
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          className="group relative flex h-32 w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/20"
         >
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            ref={imageRef}
-            src={referenceImage}
-            alt="Reference subject to insert"
-            className="max-h-full max-w-full object-contain"
-            onLoad={handleImageLoad}
+          <ReferenceCanvas
+            image={referenceImage}
+            mask={referenceMaskPreview}
+            onImageSize={setImageSize}
+            className="pointer-events-none relative flex h-full w-full items-center justify-center"
+            imgClassName="max-h-full max-w-full object-contain"
           />
-          {renderedRect && referenceMaskPreview && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={referenceMaskPreview}
-              alt=""
-              aria-hidden="true"
-              className="pointer-events-none absolute opacity-40 mix-blend-screen"
-              style={{
-                left: renderedRect.left,
-                top: renderedRect.top,
-                width: renderedRect.width,
-                height: renderedRect.height,
-                filter: "sepia(1) saturate(6) hue-rotate(280deg)",
-              }}
-            />
-          )}
-          {segmenting && (
-            <div className="absolute inset-0 flex items-center justify-center bg-background/50 text-xs text-muted-foreground">
-              Selecting…
-            </div>
-          )}
-        </div>
+          <div className="absolute inset-0 flex items-center justify-center gap-1.5 bg-background/0 text-xs font-medium text-transparent transition-colors group-hover:bg-background/60 group-hover:text-foreground">
+            <CursorClick className="size-3.5" />
+            {referenceSelection ? "Change subject" : "Click to select subject"}
+          </div>
+        </button>
       )}
 
       <p className="text-xs text-muted-foreground">
         {referenceImage
-          ? "Click the subject to lift if the photo has more than one — otherwise the whole image is used."
+          ? "Click the image to select the subject to lift if the photo has more than one — otherwise the whole image is used."
           : "Upload a photo containing the object you want to place."}
       </p>
 
@@ -171,6 +223,49 @@ export function ReferenceImagePicker() {
           onChange={handleUpload}
         />
       </label>
+
+      <Dialog open={pickerOpen} onOpenChange={setPickerOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Select the subject</DialogTitle>
+            <DialogDescription>
+              Click the object you want to place. Click again to try a different point.
+            </DialogDescription>
+          </DialogHeader>
+
+          {referenceImage && (
+            <div className="relative flex h-[50vh] w-full items-center justify-center overflow-hidden rounded-md border border-border bg-muted/20">
+              <ReferenceCanvas
+                image={referenceImage}
+                mask={referenceMaskPreview}
+                onImageSize={setImageSize}
+                onPointClick={handlePointClick}
+                className="relative flex h-full w-full cursor-crosshair items-center justify-center"
+                imgClassName="max-h-full max-w-full select-none object-contain"
+              />
+              {segmenting && (
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/50 text-xs text-muted-foreground">
+                  Selecting…
+                </div>
+              )}
+            </div>
+          )}
+
+          <DialogFooter className="items-center sm:justify-between">
+            <button
+              type="button"
+              onClick={clearSelection}
+              disabled={!referenceSelection}
+              className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-40"
+            >
+              Use whole image
+            </button>
+            <DialogClose asChild>
+              <Button size="sm">Done</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
