@@ -10,10 +10,10 @@ ImageProcessor
   -> operations/                 what the user wants to do
        object_removal            -> OmniPaint
        object_replacement        -> FLUX Fill
-       background_replacement    -> FLUX Fill
-       object_insertion          -> FLUX Fill / OmniPaint
-       prompt_edit               -> FLUX Kontext
-       generation                -> base FLUX
+       background_replacement    -> FLUX.2 Klein 4B direct edit
+       object_insertion          -> FLUX.2 Klein 4B / OmniPaint
+       prompt_edit               -> FLUX.2 Klein 4B direct edit
+       generation                -> FLUX.2 Klein 4B
        outpainting               -> FLUX Fill
        upscaling                 -> Real-ESRGAN
   -> backends/                   how a specific model is called
@@ -23,6 +23,18 @@ ImageProcessor
 `backends/protocols.py` contains structural interfaces, not abstract parent
 classes. Backends do not inherit from them. This keeps operations replaceable
 and easy to unit-test with fake implementations.
+
+| # | Mode | Backend |
+|---:|---|---|
+| 1 | Object Removal | SAM2 + OmniPaint Removal |
+| 2 | Object Replacement | SAM2 + FLUX.1 Fill |
+| 3 | Background Replacement | FLUX.2 Klein 4B direct image editing |
+| 4 | Add Object by Prompt | FLUX.2 Klein 4B direct image editing |
+| 5 | Add Object by Reference | OmniPaint Insertion |
+| 6 | Prompt-based Editing | FLUX.2 Klein 4B direct image editing |
+| 7 | Outpainting | FLUX.1 Fill |
+| 8 | Text-to-Image | FLUX.2 Klein 4B |
+| 9 | Upscaling | Real-ESRGAN; optional GFPGAN face enhancement |
 
 Masked diffusion receives the complete preprocessed image, padded to a multiple
 of `processing.size_multiple`. Cropping and automatic preprocessing inside
@@ -36,7 +48,6 @@ conda env create -f environment.yml || conda env update -f environment.yml --pru
 conda activate imageinpaint
 pip install -e .
 pip install git+https://github.com/facebookresearch/sam2.git
-python scripts/install_omnipaint.py
 python scripts/check_environment.py --require-cuda
 ```
 
@@ -47,7 +58,7 @@ authenticated `HF_TOKEN`.
 
 Do **not** run `third_party/OmniPaint/scripts/setup.sh` inside this environment.
 That upstream script pins Diffusers 0.31 and PEFT 0.10, while this project uses
-Diffusers 0.35.1 for `FluxKontextPipeline`. `environment.yml` instead pins one
+Diffusers 0.37.1 for `Flux2KleinPipeline`. `environment.yml` instead pins one
 compatibility set for both integrations, and `check_environment.py` verifies
 the exact APIs after installation. NumPy, SciPy, and OpenCV are
 kept on Conda Forge to avoid mixing incompatible compiled wheels.
@@ -55,9 +66,11 @@ The project backend also installs a small runtime shim for an internal
 Diffusers symbol that moved after OmniPaint was released.
 
 With `artifacts.prefetch_on_init: true`, `ImageProcessor.from_config()` first
-downloads every configured checkpoint to the local Hugging Face cache and
+downloads the configured checkpoints to the local Hugging Face cache and
 Real-ESRGAN to `weights/`. It does not construct pipelines or move weights to
-RAM/GPU yet. The first operation using a backend performs that separate load.
+RAM/GPU yet. For OmniPaint, text-encoder files are skipped because the model
+uses packaged static embeddings. The first operation using a backend performs
+the separate in-memory load.
 
 ## HTTP API (frontend integration)
 
@@ -104,6 +117,7 @@ from PIL import Image
 
 from inpaint_core import (
     BoxPrompt,
+    GenerationOptions,
     ImageProcessor,
     OutpaintMargins,
     PointPrompt,
@@ -123,10 +137,12 @@ selection = PointPrompt(
     points=[(raw_image.shape[1] / 2, raw_image.shape[0] / 2)],
     labels=[1],
 )
+omnipaint_max_side = int(processor.config.omnipaint.options["max_image_side"])
 image, selection = preprocess_image(
     raw_image,
     selection,
-    max_side=processor.config.processing.max_image_side,
+    # The shared demo image is also used by OmniPaint modes.
+    max_side=min(processor.config.processing.max_image_side, omnipaint_max_side),
 )
 
 segmentation = processor.segment(image, selection)
@@ -168,26 +184,19 @@ replaced = processor.replace_object(
 show_and_save(replaced, "02-object-replacement.png")
 ```
 
-### Cell 3 — Background Replacement · FLUX Fill
+### Cell 3 — Background Replacement · FLUX.2 Klein 4B
 
 ```python
 background = processor.replace_background(
     image,
     (
-        "A realistic photograph of a tabby cat sitting inside a busy modern "
-        "office, surrounded by office desks, computer monitors, chairs and "
-        "workers in the distance, natural indoor lighting, coherent perspective"
-    ),
-    foreground_mask=object_mask,
-    mask_options=MaskOptions(
-        threshold=127,
-        dilate=0,
-        erode=2,
+        "a busy modern office with desks, computer monitors, chairs, and "
+        "workers in the distance, natural indoor lighting"
     ),
     generation_options=GenerationOptions(
         seed=123,
-        num_inference_steps=50,
-        guidance_scale=30.0,
+        num_inference_steps=4,
+        guidance_scale=1.0,
     ),
 )
 
@@ -196,7 +205,8 @@ show_and_save(background, "03-background-replacement.png")
 
 ### Cell 4 — Add Object · Prompt hoặc Reference Image
 
-Add by prompt uses FLUX Fill:
+Add by prompt uses FLUX.2 Klein direct editing. `placement` is converted into
+a natural-language location/size hint; it is not a hard pixel mask:
 
 ```python
 placement = BoxPrompt(
@@ -210,6 +220,7 @@ inserted_prompt = processor.add_object_by_prompt(
     image,
     "a small red ball resting naturally on the ground",
     placement=placement,
+    generation_options=GenerationOptions(seed=42, num_inference_steps=4),
 )
 show_and_save(inserted_prompt, "04a-add-object-prompt.png")
 ```
@@ -239,23 +250,25 @@ inserted_reference = processor.add_object_by_reference(
 show_and_save(inserted_reference, "04b-add-object-reference.png")
 ```
 
-### Cell 5 — Prompt Edit · FLUX Kontext
+### Cell 5 — Prompt Edit · FLUX.2 Klein 4B
 
 ```python
 edited = processor.prompt_edit(
     image,
     "Turn the scene into winter while preserving the composition",
+    generation_options=GenerationOptions(seed=42, num_inference_steps=4),
 )
 show_and_save(edited, "05-prompt-edit.png")
 ```
 
-### Cell 6 — Generate Image · FLUX.1-dev
+### Cell 6 — Text-to-Image · FLUX.2 Klein 4B
 
 ```python
 generated = processor.generate_image(
     "A cinematic mountain lake at sunrise, realistic photography",
     width=1024,
     height=1024,
+    generation_options=GenerationOptions(seed=42, num_inference_steps=4),
 )
 show_and_save(generated, "06-generate-image.png")
 ```
@@ -299,6 +312,16 @@ connected mask or box.
 
 Model placement and offload remain backend-specific. `ModelManager` owns model
 lifetime, but does not know how Diffusers, SAM2, or Real-ESRGAN perform inference.
+
+OmniPaint has a separate 32 GB-oriented profile: its target image is limited to
+768 px on the longest side (the upstream maximum is 1024), text encoders are
+not loaded, static prompt embeddings stay on CPU while idle, and regular BF16
+weights use model CPU offload. Pipeline-level bitsandbytes INT8 is disabled for
+OmniPaint because loading its LoRAs can leave quantized parameters on the meta
+device, while its custom transformer forward also bypasses Diffusers' normal
+offload hook. Available VRAM still depends on image size, CUDA allocator
+behavior, and library versions. Verify the actual peak via
+`save_memory_stats()` on the deployment GPU.
 
 ## Verification
 

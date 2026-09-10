@@ -52,6 +52,7 @@ class OmniPaintBackend:
     def remove(
         self, image: ImageArray, mask: MaskArray, options: GenerationOptions,
     ) -> GenerationResult:
+        self._validate_target_size(image)
         runtime = self.manager.get(self.RESOURCE_KEY, self._load_runtime)
         source = Image.fromarray(image, mode="RGB")
         binary_mask = Image.fromarray(mask, mode="L")
@@ -64,6 +65,7 @@ class OmniPaintBackend:
         self, image: ImageArray, mask: MaskArray, reference: ImageArray,
         options: GenerationOptions,
     ) -> GenerationResult:
+        self._validate_target_size(image)
         runtime = self.manager.get(self.RESOURCE_KEY, self._load_runtime)
         source = Image.fromarray(image, mode="RGB")
         binary_mask = Image.fromarray(mask, mode="L")
@@ -103,41 +105,82 @@ class OmniPaintBackend:
             )
             for condition in conditions
         ]
-        self._prepare_custom_transformer(runtime.pipeline, torch)
-        prompt_embeds, pooled_prompt_embeds, text_ids = runtime.embeddings[task]
-        guidance = 3.5 if options.guidance_scale is None else options.guidance_scale
-        output = runtime.generate(
-            runtime.pipeline,
-            conditions=encoded_conditions,
-            width=image.shape[1],
-            height=image.shape[0],
-            num_inference_steps=options.num_inference_steps,
-            guidance_scale=guidance,
-            generator=torch.Generator("cpu").manual_seed(options.seed),
-            prompt_embeds=prompt_embeds,
-            pooled_prompt_embeds=pooled_prompt_embeds,
-            text_ids=text_ids,
-        ).images[0].convert("RGB")
+        execution_device = self._prepare_custom_transformer(runtime.pipeline, torch)
+        prompt_embeds, pooled_prompt_embeds, text_ids = (
+            tensor.to(execution_device) for tensor in runtime.embeddings[task]
+        )
+        guidance = (
+            float(self.config.options.get("guidance_scale", 3.5))
+            if options.guidance_scale is None
+            else options.guidance_scale
+        )
+        steps = options.num_inference_steps or int(
+            self.config.options.get("num_inference_steps", 28)
+        )
+        try:
+            output = runtime.generate(
+                runtime.pipeline,
+                conditions=encoded_conditions,
+                width=image.shape[1],
+                height=image.shape[0],
+                num_inference_steps=steps,
+                guidance_scale=guidance,
+                generator=torch.Generator("cpu").manual_seed(options.seed),
+                prompt_embeds=prompt_embeds,
+                pooled_prompt_embeds=pooled_prompt_embeds,
+                text_ids=text_ids,
+            ).images[0].convert("RGB")
+        finally:
+            if self.config.options.get("release_cuda_after_run", True):
+                del encoded_conditions, prompt_embeds, pooled_prompt_embeds, text_ids
+                self._release_cuda(runtime.pipeline, torch)
         return GenerationResult(
             np.ascontiguousarray(np.asarray(output, dtype=np.uint8)),
             options.seed,
-            {"backend": "omnipaint", "task": task},
+            {
+                "backend": "omnipaint",
+                "task": task,
+                "quantization": self.config.options.get("quantization"),
+                "num_inference_steps": steps,
+            },
         )
 
-    def _prepare_custom_transformer(self, pipeline: Any, torch: Any) -> None:
+    def _prepare_custom_transformer(self, pipeline: Any, torch: Any) -> Any:
         """Place FLUX transformer explicitly for OmniPaint's custom forward.
 
         OmniPaint calls ``tranformer_forward`` directly, bypassing the normal
         Diffusers module-forward hook that would trigger CPU offload.
         """
-        if not self.config.options.get("cpu_offload", True):
-            return
         execution_device = getattr(
             pipeline, "_execution_device", torch.device(self.device.name)
         )
-        pipeline.transformer.to(execution_device)
+        if self.config.options.get("cpu_offload", True):
+            pipeline.transformer.to(execution_device)
+        return execution_device
+
+    @staticmethod
+    def _release_cuda(pipeline: Any, torch: Any) -> None:
+        """Explicitly offload after OmniPaint's hook-bypassing custom forward."""
+        try:
+            pipeline.maybe_free_model_hooks()
+        finally:
+            hook = getattr(pipeline.transformer, "_hf_hook", None)
+            offload = getattr(hook, "offload", None)
+            if callable(offload):
+                offload()
+            else:
+                try:
+                    pipeline.transformer.to("cpu")
+                except (RuntimeError, ValueError):
+                    # Older bitsandbytes releases may reject explicit device
+                    # migration; the manager will still delete this resource
+                    # before another backend is loaded in sequential mode.
+                    pass
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     def _load_runtime(self) -> _Runtime:
+        self._validate_runtime_options()
         if not self.config.model_id:
             raise ValueError("models.omnipaint.model_id is not configured.")
         source_path = Path(
@@ -146,7 +189,7 @@ class OmniPaintBackend:
         if not (source_path / "src" / "generate.py").is_file():
             raise FileNotFoundError(
                 "Official OmniPaint source was not found at "
-                f"{source_path}. Run scripts/install_omnipaint.py first or set "
+                f"{source_path}. Clone the official repository there or set "
                 "models.omnipaint.source_path."
             )
 
@@ -170,9 +213,10 @@ class OmniPaintBackend:
         from diffusers import FluxPipeline
 
         dtype = getattr(torch, self.device.dtype)
+        load_options = self._pipeline_load_options(dtype)
         pipeline = FluxPipeline.from_pretrained(
             self.config.options.get("base_model_id", "black-forest-labs/FLUX.1-dev"),
-            torch_dtype=dtype,
+            **load_options,
         )
         files = {
             "removal": (
@@ -211,16 +255,79 @@ class OmniPaintBackend:
             pipeline.enable_model_cpu_offload()
         else:
             pipeline.to(self.device.name)
+        if self.config.options.get("vae_tiling", True):
+            pipeline.enable_vae_tiling()
+        if self.config.options.get("vae_slicing", True):
+            pipeline.enable_vae_slicing()
         return _Runtime(pipeline, Condition, generate, embeddings)
+
+    def _validate_runtime_options(self) -> None:
+        """Reject offload combinations that lose bitsandbytes INT8 state."""
+        if (
+            self.config.options.get("quantization") == "bitsandbytes_8bit"
+            and self.config.options.get("cpu_offload", True)
+        ):
+            raise ValueError(
+                "OmniPaint does not support cpu_offload with "
+                "bitsandbytes_8bit. Its custom transformer forward bypasses "
+                "Diffusers' offload hook and can lose the INT8 CB/SCB state. "
+                "Set models.omnipaint.cpu_offload to false."
+            )
+
+    def _pipeline_load_options(self, dtype: Any) -> dict[str, Any]:
+        load_options: dict[str, Any] = {"torch_dtype": dtype}
+        if not self.config.options.get("load_text_encoders", False):
+            load_options.update(
+                {
+                    "text_encoder": None,
+                    "text_encoder_2": None,
+                    "tokenizer": None,
+                    "tokenizer_2": None,
+                }
+            )
+        quantization = self.config.options.get("quantization")
+        if quantization is not None:
+            if quantization != "bitsandbytes_8bit":
+                raise ValueError(
+                    f"Unsupported OmniPaint quantization mode: {quantization!r}."
+                )
+            from diffusers.quantizers import PipelineQuantizationConfig
+
+            components = self.config.options.get(
+                "quantization_components", ["transformer"]
+            )
+            if components != ["transformer"]:
+                raise ValueError(
+                    "OmniPaint INT8 currently supports only "
+                    "quantization_components: [transformer]."
+                )
+            load_options["quantization_config"] = PipelineQuantizationConfig(
+                quant_backend="bitsandbytes_8bit",
+                quant_kwargs={"load_in_8bit": True},
+                components_to_quantize=components,
+            )
+        return load_options
 
     @staticmethod
     def _install_diffusers_compat() -> None:
-        """Bridge a private Diffusers symbol moved after OmniPaint was released."""
+        """Bridge private Diffusers symbols moved after OmniPaint was released."""
         from diffusers.models.transformers import transformer_flux
+        from diffusers.utils import (
+            USE_PEFT_BACKEND,
+            scale_lora_layers,
+            unscale_lora_layers,
+        )
         from diffusers.utils.torch_utils import is_torch_version
 
-        if not hasattr(transformer_flux, "is_torch_version"):
-            transformer_flux.is_torch_version = is_torch_version
+        compatibility_symbols = {
+            "USE_PEFT_BACKEND": USE_PEFT_BACKEND,
+            "scale_lora_layers": scale_lora_layers,
+            "unscale_lora_layers": unscale_lora_layers,
+            "is_torch_version": is_torch_version,
+        }
+        for name, value in compatibility_symbols.items():
+            if not hasattr(transformer_flux, name):
+                setattr(transformer_flux, name, value)
 
     @staticmethod
     def _install_device_compat(condition_module: Any, flux_core_module: Any) -> None:
@@ -230,7 +337,10 @@ class OmniPaintBackend:
                 pipeline, "_execution_device", pipeline.device
             )
             images = pipeline.image_processor.preprocess(images)
-            images = images.to(execution_device).to(pipeline.dtype)
+            images = images.to(
+                device=execution_device,
+                dtype=pipeline.vae.dtype,
+            )
             images = pipeline.vae.encode(images).latent_dist.sample()
             images = (
                 images - pipeline.vae.config.shift_factor
@@ -241,7 +351,7 @@ class OmniPaintBackend:
                 images.shape[2],
                 images.shape[3],
                 execution_device,
-                pipeline.dtype,
+                images.dtype,
             )
             if images_tokens.shape[1] != images_ids.shape[0]:
                 images_ids = pipeline._prepare_latent_image_ids(
@@ -249,7 +359,7 @@ class OmniPaintBackend:
                     images.shape[2] // 2,
                     images.shape[3] // 2,
                     execution_device,
-                    pipeline.dtype,
+                    images.dtype,
                 )
             return images_tokens, images_ids
 
@@ -264,11 +374,22 @@ class OmniPaintBackend:
         missing = [key for key in required if key not in data]
         if missing:
             raise KeyError(f"OmniPaint embedding is missing keys: {missing}.")
-        device = self.device.name
-        prompt = torch.from_numpy(data["prompt_embeds"]).to(device=device, dtype=dtype)
-        pooled = torch.from_numpy(data["pooled_prompt_embeds"]).to(device=device, dtype=dtype)
+        # Keep static embeddings on CPU while idle. They are moved to the
+        # current execution device only for one generation call.
+        prompt = torch.from_numpy(data["prompt_embeds"]).to(dtype=dtype)
+        pooled = torch.from_numpy(data["pooled_prompt_embeds"]).to(dtype=dtype)
         ids = data["text_ids"]
         if ids.ndim == 3 and ids.shape[0] == 1:
             ids = ids[0]
-        text_ids = torch.as_tensor(ids, device=device, dtype=torch.long)
+        text_ids = torch.as_tensor(ids, dtype=torch.long)
         return prompt, pooled, text_ids
+
+    def _validate_target_size(self, image: ImageArray) -> None:
+        max_side = int(self.config.options.get("max_image_side", 1024))
+        actual = max(image.shape[:2])
+        if actual > max_side:
+            raise ValueError(
+                f"OmniPaint input side is {actual}px, exceeding its configured "
+                f"max_image_side={max_side}. Preprocess the target image with "
+                f"max_side={max_side} before removal or reference insertion."
+            )

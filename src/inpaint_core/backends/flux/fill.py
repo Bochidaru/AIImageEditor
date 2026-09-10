@@ -30,7 +30,9 @@ class FluxFillBackend:
             "mask_image": Image.fromarray(mask, mode="L"),
             "height": image.shape[0],
             "width": image.shape[1],
-            "num_inference_steps": options.num_inference_steps,
+            "num_inference_steps": options.num_inference_steps or int(
+                self.config.options.get("num_inference_steps", 28)
+            ),
             "generator": generator_for(options.seed),
         }
         if options.guidance_scale is not None:

@@ -15,6 +15,8 @@ def test_prefetch_replaces_remote_ids_with_local_paths(monkeypatch, tmp_path):
         destination.mkdir(exist_ok=True)
         if allow_patterns:
             for relative in allow_patterns:
+                if "*" in relative:
+                    continue
                 path = destination / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.touch()
@@ -28,11 +30,11 @@ def test_prefetch_replaces_remote_ids_with_local_paths(monkeypatch, tmp_path):
         "models": {
             "segmentation": {"backend": "sam2", "model_id": "org/sam"},
             "flux_fill": {"backend": "flux_fill", "model_id": "org/fill"},
-            "flux_generation": {"backend": "flux", "model_id": "org/base"},
-            "flux_kontext": {"backend": "flux_kontext", "model_id": "org/kontext"},
+            "flux2_klein": {"backend": "flux2_klein", "model_id": "org/klein"},
             "omnipaint": {
                 "backend": "omnipaint", "model_id": "org/omni",
                 "base_model_id": "org/base",
+                "load_text_encoders": False,
             },
             "upscaler": {"backend": "realesrgan", "checkpoint": str(checkpoint)},
         },
@@ -43,6 +45,9 @@ def test_prefetch_replaces_remote_ids_with_local_paths(monkeypatch, tmp_path):
 
     assert config.segmentation.model_id == result["sam2"]
     assert config.flux_fill.model_id == result["flux_fill"]
+    assert config.flux2_klein.model_id == result["flux2_klein"]
     assert config.omnipaint.model_id == result["omnipaint_adapters"]
     assert config.omnipaint.options["base_model_id"] == result["omnipaint_base"]
     assert [repo for repo, _ in calls].count("org/base") == 1
+    omni_base_call = next(item for item in calls if item[0] == "org/base")
+    assert "transformer/**" in omni_base_call[1]

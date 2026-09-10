@@ -1,31 +1,38 @@
 from __future__ import annotations
 
-from ..backends.protocols import MaskedEditor
-from ..masks.operations import invert
-from ..types import EditResult, GenerationOptions, ImageArray, MaskArray, MaskOptions, SelectionPrompt
+from ..backends.protocols import PromptEditor
+from ..types import GenerationOptions, GenerationResult, ImageArray
 from .common import OperationContext
 
 
 class BackgroundReplacementOperation:
-    def __init__(self, context: OperationContext, backend: MaskedEditor):
+    def __init__(self, context: OperationContext, backend: PromptEditor):
         self.context, self.backend = context, backend
 
-    def run(self, image: ImageArray, prompt: str, *,
-            foreground_selection: SelectionPrompt | None = None,
-            foreground_mask: MaskArray | None = None,
-            mask_options: MaskOptions | None = None,
-            generation_options: GenerationOptions | None = None) -> EditResult:
+    def run(
+        self,
+        image: ImageArray,
+        prompt: str,
+        *,
+        generation_options: GenerationOptions | None = None,
+    ) -> GenerationResult:
         if not prompt.strip():
             raise ValueError("A background prompt is required.")
         self.context.validate_image(image)
-        mo = self.context.mask_options(mask_options)
-        go = self.context.generation_options(generation_options)
-        foreground = self.context.resolve_mask(
-            image, foreground_selection, foreground_mask, mo
+        options = self.context.generation_options(generation_options)
+        instruction = (
+            f"Replace only the background with {prompt.strip()}. "
+            "Preserve the main foreground subject exactly: keep its identity, "
+            "appearance, pose, size, position, and camera framing unchanged. "
+            "Make the new background photorealistic with coherent perspective, "
+            "lighting, shadows, and depth of field."
         )
-        background = invert(foreground)
-        return self.context.run_masked(
-            mode="background_replacement", image=image, mask=background, options=go,
-            invoke=lambda prepared_image, prepared_mask, options:
-                self.backend.edit(prepared_image, prepared_mask, prompt, options),
+        with self.context.memory.measure("background_replacement"):
+            result = self.backend.edit_image(image, instruction, options)
+        result.metadata.update(
+            {
+                "mode": "background_replacement",
+                "stages": self.context.memory.results.copy(),
+            }
         )
+        return result

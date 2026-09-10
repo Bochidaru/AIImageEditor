@@ -45,9 +45,8 @@ class AppConfig:
     device: DeviceConfig
     segmentation: ModelConfig
     flux_fill: ModelConfig
-    flux_generation: ModelConfig
+    flux2_klein: ModelConfig
     omnipaint: ModelConfig
-    flux_kontext: ModelConfig
     upscaler: ModelConfig
     artifacts: ArtifactConfig = field(default_factory=ArtifactConfig)
     memory: MemoryConfig = field(default_factory=MemoryConfig)
@@ -85,9 +84,8 @@ class AppConfig:
             flux_fill=_model_config(
                 models.get("flux_fill", models.get("editing", {}))
             ),
-            flux_generation=_model_config(models.get("flux_generation", {})),
+            flux2_klein=_model_config(models.get("flux2_klein", {})),
             omnipaint=_model_config(models.get("omnipaint", {})),
-            flux_kontext=_model_config(models.get("flux_kontext", {})),
             upscaler=_model_config(models.get("upscaler", {})),
             artifacts=ArtifactConfig(**payload.get("artifacts", {})),
             memory=MemoryConfig(**payload.get("memory", {})),

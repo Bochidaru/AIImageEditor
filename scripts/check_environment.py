@@ -15,7 +15,7 @@ EXPECTED_VERSIONS = {
     "scipy": "1.16.3",
     "torch": "2.14.0",
     "torchvision": "0.29.0",
-    "diffusers": "0.35.1",
+    "diffusers": "0.37.1",
     "transformers": "4.55.4",
     "tokenizers": "0.21.4",
     "peft": "0.17.1",
@@ -23,7 +23,7 @@ EXPECTED_VERSIONS = {
     "huggingface-hub": "0.34.4",
     "safetensors": "0.6.2",
     "sentencepiece": "0.2.1",
-    "bitsandbytes": "0.48.0",
+    "bitsandbytes": "0.48.2",
     "realesrgan": "0.3.0",
     "basicsr": "1.4.2",
     "facexlib": "0.3.0",
@@ -66,7 +66,13 @@ def check_import(
 
 
 def check_diffusers_api() -> None:
-    from diffusers import FluxFillPipeline, FluxKontextPipeline, FluxPipeline
+    from inpaint_core.backends.omnipaint.backend import OmniPaintBackend
+
+    # OmniPaint imports private symbols from their pre-0.37 locations. Install
+    # the project's compatibility aliases before validating those imports.
+    OmniPaintBackend._install_diffusers_compat()
+
+    from diffusers import Flux2KleinPipeline, FluxFillPipeline, FluxPipeline
     from diffusers.models.transformers.transformer_flux import (
         FluxTransformer2DModel,
         Transformer2DModelOutput,
@@ -88,7 +94,7 @@ def check_diffusers_api() -> None:
         item is not None
         for item in (
             FluxFillPipeline,
-            FluxKontextPipeline,
+            Flux2KleinPipeline,
             FluxPipeline,
             FluxTransformer2DModel,
             Transformer2DModelOutput,
