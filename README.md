@@ -12,7 +12,7 @@ The project exposes nine image generation and editing modes through one Python A
 
 The subject and composition are preserved while the scene is rebuilt from a natural-language instruction.
 
-| Processed input | Generated result |
+| input | Generated result |
 |:---:|:---:|
 | <img src="docs/assets/showcase/03-replace-background-input.png" alt="Portrait before background replacement" width="100%"> | <img src="docs/assets/showcase/03-replace-background-output.png" alt="Portrait in a generated office background" width="100%"> |
 
@@ -40,11 +40,11 @@ SAM2 extracts a subject from a reference image; OmniPaint inserts it into the re
 
 ## Results gallery
 
-All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv-showcase-all-modes.ipynb). Selection markers are visualization overlays on the processed inputs, not pixels sent to the generation backend.
+All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv-showcase-all-modes.ipynb). Selection markers are visualization overlays on the inputs, not pixels sent to the generation backend.
 
 ### 1. Object removal
 
-| Processed input | SAM2 mask | Result |
+| input | SAM2 mask | Result |
 |:---:|:---:|:---:|
 | <img src="docs/assets/showcase/01-remove-object-input.png" alt="Coffee table with selected phone" width="100%"> | <img src="docs/assets/showcase/01-remove-object-mask.png" alt="Phone segmentation mask" width="100%"> | <img src="docs/assets/showcase/01-remove-object-output.png" alt="Coffee table after phone removal" width="100%"> |
 
@@ -52,7 +52,7 @@ All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv
 
 **Prompt:** “a golden retriever sitting in the same position”
 
-| Processed input | SAM2 mask | Result |
+| input | SAM2 mask | Result |
 |:---:|:---:|:---:|
 | <img src="docs/assets/showcase/02-replace-object-input.png" alt="Selected cat before replacement" width="100%"> | <img src="docs/assets/showcase/02-replace-object-mask.png" alt="Cat segmentation mask" width="100%"> | <img src="docs/assets/showcase/02-replace-object-output.png" alt="Cat replaced with a golden retriever" width="100%"> |
 
@@ -60,7 +60,7 @@ All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv
 
 **Prompt:** “a bright modern creative office with soft window light and shallow depth of field”
 
-| Processed input | Result |
+| input | Result |
 |:---:|:---:|
 | <img src="docs/assets/showcase/03-replace-background-input.png" alt="Portrait with foliage background" width="100%"> | <img src="docs/assets/showcase/03-replace-background-output.png" alt="Portrait with office background" width="100%"> |
 
@@ -68,7 +68,7 @@ All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv
 
 **Prompt:** “a single colorful hot-air balloon floating naturally in the open sky above the field”
 
-| Processed input | Result |
+| input | Result |
 |:---:|:---:|
 | <img src="docs/assets/showcase/04-add-object-prompt-input.png" alt="Landscape before prompt insertion" width="100%"> | <img src="docs/assets/showcase/04-add-object-prompt-output.png" alt="Landscape with generated hot-air balloon" width="100%"> |
 
@@ -82,7 +82,7 @@ All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv
 
 **Prompt:** “Restore this archival photograph with natural modern colors, neutral white balance, and realistic contrast while preserving every person, object, and the original composition”
 
-| Processed input | Result |
+| input | Result |
 |:---:|:---:|
 | <img src="docs/assets/showcase/06-prompt-edit-input.png" alt="Faded archival photograph" width="100%"> | <img src="docs/assets/showcase/06-prompt-edit-output.png" alt="Color-restored photograph" width="100%"> |
 
@@ -96,7 +96,7 @@ All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv
 
 Extend 128px left side and 128px right side
 
-| Processed input | Extended result |
+| input | Extended result |
 |:---:|:---:|
 | <img src="docs/assets/showcase/08-outpainting-input.png" alt="Cat image before outpainting" width="100%"> | <img src="docs/assets/showcase/08-outpainting-output.png" alt="Cat image extended on both sides" width="100%"> |
 
@@ -104,7 +104,7 @@ Extend 128px left side and 128px right side
 
 The example doubles the spatial resolution from **512 × 341** to **1024 × 682**.
 
-| Processed input | 2× result |
+| input | 2× result |
 |:---:|:---:|
 | <img src="docs/assets/showcase/09-upscaling-input.png" alt="Low-resolution portrait input" width="100%"> | <img src="docs/assets/showcase/09-upscaling-output.png" alt="Two-times upscaled portrait" width="100%"> |
 
