@@ -126,27 +126,6 @@ Each workflow records its processed image dimensions, wall-clock runtime, genera
 
 Runtime and memory vary with hardware, resolution, checkpoint cache state, and library versions. OmniPaint target images use a 768 px longest-side profile; other image workflows can preprocess up to 2048 px.
 
-## How it is built
-
-```text
-Next.js studio
-      │ JSON + base64 PNG
-      ▼
-FastAPI endpoints
-      ▼
-ImageProcessor facade
-      ├── operations/   user-facing editing semantics
-      ├── backends/     model-specific adapters
-      └── ModelManager  lazy loading and GPU lifecycle
-             ├── SAM2
-             ├── OmniPaint
-             ├── FLUX.1 Fill
-             ├── FLUX.2 Klein 4B
-             └── Real-ESRGAN / GFPGAN
-```
-
-The separation between operations and model adapters keeps the public API stable while allowing backends to be replaced or tested with lightweight fakes. A sequential memory policy can release the active model before loading the next one, while a resident policy keeps loaded backends available.
-
 ## Quick start
 
 ### Backend
@@ -181,19 +160,6 @@ npm run dev
 ```
 
 Open `http://localhost:3000/studio`. For environment variables, gated-model access, production commands, and platform notes, follow the [installation and usage guide](GUIDE.md).
-
-## Verification
-
-```bash
-# CPU-safe contract and unit tests with fake backends
-python -m pytest -q
-
-# Real-GPU smoke tests
-python scripts/smoke_test.py --mode segment
-python scripts/smoke_test.py --mode all --reference assets/cat2.jpg
-```
-
-The FastAPI contract is tested across every endpoint without downloading model weights. Real inference can be validated one mode at a time with the sequential memory policy.
 
 ## Documentation
 
