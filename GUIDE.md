@@ -1,247 +1,244 @@
-# GUIDE.md — Hướng dẫn cài đặt & chạy dự án ImageEditor
+# AI Image Editor — Installation and Usage Guide
 
-> Đây là bản hướng dẫn tiếng Việt, chi tiết theo từng bước. Tài liệu tham
-> chiếu chính thức (tiếng Anh) là [README.md](README.md) — nếu hai tài liệu
-> có chỗ nào mâu thuẫn, hãy tin theo README.md.
+This guide covers local installation, development, real-GPU inference, testing, and troubleshooting. Start with the [project showcase](README.md) for a visual overview, or use the [technical reference](TECHNICAL_REFERENCE.md) for architecture and API examples.
 
-## Mục lục
+## Contents
 
-1. [Tổng quan kiến trúc](#1-tổng-quan-kiến-trúc)
-2. [Yêu cầu hệ thống](#2-yêu-cầu-hệ-thống)
-3. [Cài đặt Backend (Python)](#3-cài-đặt-backend-python)
-4. [Cài đặt Frontend (Next.js)](#4-cài-đặt-frontend-nextjs)
-5. [Chạy dự án (Development)](#5-chạy-dự-án-development)
-6. [Chạy dự án (Production với GPU thật)](#6-chạy-dự-án-production-với-gpu-thật)
-7. [Kiểm tra môi trường](#7-kiểm-tra-môi-trường)
-8. [Chạy Unit Tests](#8-chạy-unit-tests)
-9. [Smoke Test (GPU thật)](#9-smoke-test-gpu-thật)
-10. [Sử dụng Jupyter Notebook](#10-sử-dụng-jupyter-notebook)
-11. [Cấu trúc thư mục](#11-cấu-trúc-thư-mục)
-12. [Các biến môi trường](#12-các-biến-môi-trường)
-13. [Xử lý lỗi thường gặp](#13-xử-lý-lỗi-thường-gặp)
+1. [Architecture overview](#1-architecture-overview)
+2. [System requirements](#2-system-requirements)
+3. [Backend installation](#3-backend-installation)
+4. [Frontend installation](#4-frontend-installation)
+5. [Development workflow](#5-development-workflow)
+6. [Real-GPU deployment](#6-real-gpu-deployment)
+7. [Environment validation](#7-environment-validation)
+8. [Unit tests](#8-unit-tests)
+9. [GPU smoke tests](#9-gpu-smoke-tests)
+10. [Jupyter notebook](#10-jupyter-notebook)
+11. [Project structure](#11-project-structure)
+12. [Environment variables](#12-environment-variables)
+13. [Troubleshooting](#13-troubleshooting)
 
----
+## 1. Architecture overview
 
-## 1. Tổng quan kiến trúc
+The repository contains two main applications:
 
-Dự án gồm hai phần chính:
-
-```
-ImageEditor/
-├── src/inpaint_core/   ← Backend Python (FastAPI + AI models)
-└── frontend/           ← Frontend Next.js (React 19, TypeScript)
+```text
+AIImageEditor/
+├── src/inpaint_core/   Python core, model adapters, and FastAPI service
+└── frontend/           Next.js studio built with React and TypeScript
 ```
 
-**Luồng hoạt động:**
+Request flow:
 
-```
-Trình duyệt
-  └─► Next.js (frontend, port 3000)
-        └─► FastAPI (backend, port 8000)
+```text
+Browser
+  └─► Next.js frontend (port 3000)
+        └─► FastAPI backend (port 8000)
               └─► ImageProcessor
-                    ├── SAM2          (phân vùng đối tượng)
-                    ├── OmniPaint     (xóa / chèn đối tượng)
-                    ├── FLUX.1 Fill   (thay thế đối tượng, outpainting)
-                    ├── FLUX.2 Klein  (chỉnh sửa theo prompt, tạo ảnh)
-                    └── Real-ESRGAN   (upscaling)
+                    ├── SAM2          object segmentation
+                    ├── OmniPaint     object removal and insertion
+                    ├── FLUX.1 Fill   replacement and outpainting
+                    ├── FLUX.2 Klein  prompt editing and generation
+                    └── Real-ESRGAN   upscaling
 ```
 
-| # | Chức năng | Model |
-|---|-----------|-------|
-| 1 | Xóa đối tượng | SAM2 + OmniPaint |
-| 2 | Thay thế đối tượng | SAM2 + FLUX.1 Fill |
-| 3 | Thay nền | FLUX.2 Klein 4B |
-| 4 | Thêm đối tượng (prompt) | FLUX.2 Klein 4B |
-| 5 | Thêm đối tượng (ảnh tham chiếu) | OmniPaint Insertion |
-| 6 | Chỉnh sửa theo prompt | FLUX.2 Klein 4B |
-| 7 | Outpainting | FLUX.1 Fill |
-| 8 | Text-to-Image | FLUX.2 Klein 4B |
-| 9 | Upscaling | Real-ESRGAN (+GFPGAN) |
+| # | Workflow | Model/backend |
+|---:|---|---|
+| 1 | Object removal | SAM2 + OmniPaint |
+| 2 | Object replacement | SAM2 + FLUX.1 Fill |
+| 3 | Background replacement | FLUX.2 Klein 4B |
+| 4 | Add object by prompt | FLUX.2 Klein 4B |
+| 5 | Add object by reference | SAM2 + OmniPaint Insertion |
+| 6 | Prompt-based editing | FLUX.2 Klein 4B |
+| 7 | Text-to-image | FLUX.2 Klein 4B |
+| 8 | Outpainting | FLUX.1 Fill |
+| 9 | Upscaling | Real-ESRGAN with optional GFPGAN |
 
----
+## 2. System requirements
 
-## 2. Yêu cầu hệ thống
-
-| Thành phần | Yêu cầu tối thiểu |
+| Component | Requirement |
 |---|---|
-| **OS** | Windows 10/11, Linux, hoặc WSL2 |
-| **Python** | 3.12 (bắt buộc đúng phiên bản) |
-| **Conda** | Miniconda hoặc Anaconda |
-| **Node.js** | >= 18 |
-| **npm** | >= 9 |
-| **GPU** | NVIDIA GPU với CUDA 13.0, >= 32 GB VRAM (để chạy full models) |
-| **Git** | Để clone OmniPaint |
+| Operating system | Windows 10/11, Linux, or WSL2 |
+| Python | 3.12 |
+| Environment manager | Miniconda or Anaconda |
+| Node.js | 18 or newer |
+| npm | 9 or newer |
+| GPU | NVIDIA GPU with CUDA support; approximately 32 GB VRAM for every full workflow |
+| Git | Required to clone OmniPaint and install SAM2 |
 
-> **Lưu ý:** Nếu không có GPU, bạn vẫn có thể chạy frontend với backend **fake** (xem [Mục 5](#5-chạy-dự-án-development)).
+A GPU is not required for frontend development, API contract tests, or unit tests. Use the fake backend described in [Development workflow](#5-development-workflow).
 
----
+## 3. Backend installation
 
-## 3. Cài đặt Backend (Python)
-
-### Bước 3.1 — Tạo Conda environment
+### 3.1 Create the Conda environment
 
 ```bash
-# Tạo môi trường mới (hoặc cập nhật nếu đã tồn tại)
 conda env create -f environment.yml
-# Nếu đã tồn tại, dùng lệnh sau thay thế:
-conda env update -f environment.yml --prune
+```
 
-# Kích hoạt môi trường
+If the environment already exists, update it instead:
+
+```bash
+conda env update -f environment.yml --prune
+```
+
+Activate it before running any Python command:
+
+```bash
 conda activate imageinpaint
 ```
 
-> Environment được đặt tên là `imageinpaint`, dùng Python 3.12.
-
-### Bước 3.2 — Cài đặt SAM2
+### 3.2 Install SAM2
 
 ```bash
 pip install git+https://github.com/facebookresearch/sam2.git
 ```
 
-### Bước 3.3 — Cài đặt package `inpaint-core`
+### 3.3 Install the project package
 
 ```bash
 pip install -e . --no-deps
 ```
 
-### Bước 3.4 — Cài đặt OmniPaint
+`--no-deps` is intentional: the compatible dependency set is managed by `environment.yml`.
 
-OmniPaint runtime được clone vào `third_party/OmniPaint`:
+### 3.4 Install OmniPaint
+
+The helper script clones the upstream runtime into `third_party/OmniPaint`:
 
 ```bash
 python scripts/install_omnipaint.py
 ```
 
-> **Lưu ý:** Chỉ chạy lệnh này một lần. Nếu thư mục đã tồn tại, script sẽ báo lỗi.
-> **Không** chạy script `setup.sh` trong thư mục OmniPaint gốc vì nó sẽ cài đè các phiên bản library không tương thích.
+Run this command once. It exits with an error if the target directory already exists.
 
-### Bước 3.5 — Cài đặt PyTorch với CUDA (Windows native)
+Do not run `third_party/OmniPaint/scripts/setup.sh` inside this environment. The upstream script pins versions of Diffusers and PEFT that conflict with the FLUX.2 integration. This project uses one tested compatibility set for all backends and applies a small runtime compatibility shim for an internal Diffusers symbol used by OmniPaint.
 
-Trên **Windows native** (không phải WSL2), PyTorch CUDA cần được cài từ nguồn riêng:
+### 3.5 Install CUDA-enabled PyTorch on native Windows
+
+On native Windows, install PyTorch from the matching CUDA package index:
 
 ```bash
-# Gỡ torch đã cài từ PyPI nếu có
 pip uninstall torch torchvision
-
-# Cài từ CUDA 13.0 index
 pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cu130
 ```
 
-Trên **Linux / WSL2**, PyPI wheels đã bao gồm CUDA và không cần bước này.
+On Linux and WSL2, use the packages specified by `environment.yml` unless your CUDA environment requires a platform-specific build.
 
-### Bước 3.6 — Cấu hình Hugging Face Token (chỉ cần cho GPU thật)
+### 3.6 Configure Hugging Face access
 
-Một số model (FLUX.1 Fill, FLUX.2 Klein, OmniPaint) yêu cầu quyền truy cập Hugging Face.
-Tạo token tại [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) rồi cài đặt:
+FLUX and OmniPaint checkpoints may require approved Hugging Face access. Create a token at [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens), accept the relevant model licenses, and expose the token in your shell.
+
+Linux/macOS:
 
 ```bash
-# Linux/macOS
 export HF_TOKEN=hf_xxxxxxxxxxxxxxxxxxxx
+```
 
-# Windows PowerShell
+Windows PowerShell:
+
+```powershell
 $env:HF_TOKEN = "hf_xxxxxxxxxxxxxxxxxxxx"
 ```
 
----
+When `artifacts.prefetch_on_init` is enabled, processor initialization downloads configured artifacts into the local caches. Pipelines are loaded into memory only when their first operation runs.
 
-## 4. Cài đặt Frontend (Next.js)
+## 4. Frontend installation
+
+Install the Next.js dependencies:
 
 ```bash
 cd frontend
 npm install
 ```
 
-### Cấu hình biến môi trường Frontend
+Create a local environment file from the template.
 
-Copy file `.env.local.example` thành `.env.local`:
+Windows Command Prompt:
+
+```bat
+copy frontend\.env.local.example frontend\.env.local
+```
+
+Linux/macOS:
 
 ```bash
-# Windows
-copy frontend\.env.local.example frontend\.env.local
-
-# Linux/macOS
 cp frontend/.env.local.example frontend/.env.local
 ```
 
-Nội dung mặc định của `.env.local`:
+Default configuration:
 
 ```env
-# URL của backend FastAPI (mặc định: http://localhost:8000)
 NEXT_PUBLIC_API_URL=http://localhost:8000
-
-# Đặt "true" để dùng mock API (không cần backend chạy)
 NEXT_PUBLIC_USE_MOCK_API=false
 ```
 
----
+Set `NEXT_PUBLIC_USE_MOCK_API=true` only when you want the browser application to use its in-process mock without a running FastAPI service.
 
-## 5. Chạy dự án (Development)
+## 5. Development workflow
 
-### Chế độ phát triển UI (không cần GPU)
+### UI development without a GPU
 
-Sử dụng **fake backend** — backend sẽ trả về ảnh giả, không cần GPU hay model weights.
+Use two terminals.
 
-**Terminal 1 — Chạy fake backend:**
+Terminal 1 — start FastAPI with in-memory fake backends:
 
 ```bash
 conda activate imageinpaint
 python scripts/run_api.py --fake
 ```
 
-Backend sẽ khởi động tại `http://localhost:8000`.
+The API is available at `http://localhost:8000`.
 
-**Terminal 2 — Chạy frontend:**
+Terminal 2 — start Next.js:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-Frontend sẽ khởi động tại `http://localhost:3000`.
+Open:
 
-Mở trình duyệt và truy cập:
-- **Landing page:** `http://localhost:3000`
-- **Studio (editor):** `http://localhost:3000/studio`
+- Landing page: `http://localhost:3000`
+- Editing studio: `http://localhost:3000/studio`
+- API health check: `http://localhost:8000/api/health`
 
-### Chế độ mock hoàn toàn (chỉ frontend, không cần backend)
+### Frontend-only mock mode
 
-Sửa `frontend/.env.local`:
+Set the following value in `frontend/.env.local`:
 
 ```env
 NEXT_PUBLIC_USE_MOCK_API=true
 ```
 
-Sau đó chỉ cần chạy frontend, không cần chạy backend:
+Then run only the frontend:
 
 ```bash
 cd frontend
 npm run dev
 ```
 
----
+## 6. Real-GPU deployment
 
-## 6. Chạy dự án (Production với GPU thật)
-
-### Bước 6.1 — Chạy backend với config thật
+### 6.1 Start the inference API
 
 ```bash
 conda activate imageinpaint
 python scripts/run_api.py --config configs/default.yaml
 ```
 
-Lần đầu chạy, `ImageProcessor.from_config()` sẽ **tải xuống** các model weights từ Hugging Face về local cache.
-Quá trình này có thể mất nhiều thời gian tùy tốc độ mạng.
+The first run can take a long time because configured checkpoints are downloaded and cached. The first request to each backend also includes its in-memory model load.
 
-Các tùy chọn của `run_api.py`:
+`run_api.py` accepts:
 
-| Tham số | Mặc định | Mô tả |
+| Option | Default | Description |
 |---|---|---|
-| `--fake` | — | Dùng fake backends, không cần GPU |
-| `--config PATH` | `configs/default.yaml` | Đường dẫn tới config YAML |
-| `--host` | `127.0.0.1` | Host lắng nghe |
-| `--port` | `8000` | Port lắng nghe |
+| `--fake` | disabled | Use fake backends without CUDA or checkpoints |
+| `--config PATH` | `configs/default.yaml` | Configuration file |
+| `--host` | `127.0.0.1` | Interface to bind |
+| `--port` | `8000` | Port to bind |
 
-### Bước 6.2 — Chạy frontend (production build)
+### 6.2 Build and run the frontend
 
 ```bash
 cd frontend
@@ -249,260 +246,244 @@ npm run build
 npm run start
 ```
 
----
+For a remote deployment, update `NEXT_PUBLIC_API_URL` and `INPAINT_API_CORS_ORIGINS` before building and starting the applications.
 
-## 7. Kiểm tra môi trường
+## 7. Environment validation
 
-Sau khi cài đặt xong, chạy script kiểm tra để đảm bảo tất cả library đúng phiên bản:
+Run the compatibility checker after installation:
 
 ```bash
 conda activate imageinpaint
 
-# Kiểm tra không yêu cầu CUDA (an toàn trên máy không có GPU)
+# Safe on a machine without an NVIDIA GPU
 python scripts/check_environment.py
 
-# Kiểm tra đầy đủ kể cả CUDA (yêu cầu GPU)
+# Also require CUDA and BF16 support
 python scripts/check_environment.py --require-cuda
 ```
 
-Script kiểm tra các mục:
-- Python 3.12
-- Tất cả library Python với phiên bản chính xác
-- NumPy / SciPy / OpenCV imports
-- FLUX / Diffusers API compatibility
-- OmniPaint private Diffusers API
-- SAM2 API
-- Real-ESRGAN / BasicSR API
-- CUDA availability và bfloat16 support
+The checker validates:
 
----
+- Python and pinned library versions
+- NumPy, SciPy, and OpenCV imports
+- FLUX/Diffusers APIs
+- OmniPaint's private Diffusers dependency
+- SAM2 APIs
+- Real-ESRGAN and BasicSR APIs
+- CUDA availability and bfloat16 support when requested
 
-## 8. Chạy Unit Tests
+## 8. Unit tests
 
-Unit tests dùng fake backends, **không cần GPU, không cần tải model**:
+Unit and API contract tests use fake backends. They do not need CUDA or checkpoint downloads.
 
 ```bash
 conda activate imageinpaint
 python -m pytest -q
 ```
 
-Hoặc chạy với output chi tiết hơn:
+Use verbose output when diagnosing a failure:
 
 ```bash
 python -m pytest -v
 ```
 
-Tests nằm trong thư mục `tests/`, bao gồm `tests/test_api.py` kiểm tra toàn bộ các HTTP endpoint thông qua FastAPI `TestClient`.
+`tests/test_api.py` sends requests to every FastAPI endpoint through `TestClient`, while the rest of the suite verifies preprocessing, operations, model lifecycle, and backend contracts.
 
----
+## 9. GPU smoke tests
 
-## 9. Smoke Test (GPU thật)
-
-Sau khi cài đặt model weights, kiểm tra từng chế độ bằng GPU thật:
+Test real inference one operation at a time after the model artifacts are available:
 
 ```bash
 conda activate imageinpaint
 
-# Kiểm tra chỉ phân vùng (segment)
 python scripts/smoke_test.py --mode segment
-
-# Kiểm tra xóa đối tượng
 python scripts/smoke_test.py --mode remove
-
-# Kiểm tra tất cả chế độ (cần ảnh tham chiếu cho add-reference)
 python scripts/smoke_test.py --mode all --reference assets/cat2.jpg
 ```
 
-Các `--mode` hợp lệ:
+Available modes:
 
-| Mode | Chức năng |
+| Mode | Operation |
 |---|---|
-| `segment` | Phân vùng đối tượng |
-| `remove` | Xóa đối tượng |
-| `replace` | Thay thế đối tượng |
-| `background` | Thay nền |
-| `add-prompt` | Thêm đối tượng bằng prompt |
-| `add-reference` | Thêm đối tượng bằng ảnh tham chiếu |
-| `prompt-edit` | Chỉnh sửa theo prompt |
-| `generate` | Text-to-Image |
+| `segment` | Object segmentation |
+| `remove` | Object removal |
+| `replace` | Object replacement |
+| `background` | Background replacement |
+| `add-prompt` | Prompt-guided insertion |
+| `add-reference` | Reference-guided insertion |
+| `prompt-edit` | Prompt-based editing |
+| `generate` | Text-to-image |
 | `outpaint` | Outpainting |
 | `upscale` | Upscaling |
-| `all` | Chạy tất cả |
+| `all` | Run every mode |
 
-Kết quả ảnh được lưu tại `outputs/smoke/`. Thống kê VRAM lưu tại `outputs/smoke/memory.json`.
+Images are written to `outputs/smoke/`; memory statistics are written to `outputs/smoke/memory.json`.
 
----
+## 10. Jupyter notebook
 
-## 10. Sử dụng Jupyter Notebook
+The CV showcase notebook runs all nine modes, displays processed inputs, masks, and outputs, and records image dimensions, parameters, runtime, and CUDA peak memory.
 
 ```bash
 conda activate imageinpaint
-cd notebooks
-jupyter lab
+jupyter lab notebooks/cv-showcase-all-modes.ipynb
 ```
 
-Mở file notebook trong thư mục `notebooks/`. Chạy **setup cell** trước (khởi tạo `ImageProcessor` và load ảnh mẫu `assets/cat.jpg`), sau đó chạy từng cell thao tác:
+Run the setup cells first, then execute one workflow cell at a time. Each workflow is profiled as a cold start and releases its models after completion. Generated artifacts are written to `outputs/showcase/`.
 
-| Cell | Chức năng | Output |
-|---|---|---|
-| Setup | Khởi tạo processor + segment ảnh | — |
-| Cell 1 | Object Removal (OmniPaint) | `outputs/notebook/01-object-removal.png` |
-| Cell 2 | Object Replacement (FLUX Fill) | `outputs/notebook/02-object-replacement.png` |
-| Cell 3 | Background Replacement (FLUX.2 Klein) | `outputs/notebook/03-background-replacement.png` |
-| Cell 4a | Add Object by Prompt | `outputs/notebook/04a-add-object-prompt.png` |
-| Cell 4b | Add Object by Reference | `outputs/notebook/04b-add-object-reference.png` |
-| Cell 5 | Prompt Edit (FLUX.2 Klein) | `outputs/notebook/05-prompt-edit.png` |
-| Cell 6 | Text-to-Image (FLUX.2 Klein) | `outputs/notebook/06-generate-image.png` |
-| Cell 7 | Outpainting (FLUX Fill) | `outputs/notebook/07-outpaint.png` |
-| Cell 8 | Upscaling (Real-ESRGAN) | `outputs/notebook/08-upscale.png` |
+| Section | Workflow | Saved artifacts |
+|---:|---|---|
+| 1 | Object removal | input, SAM2 mask, output, run metadata |
+| 2 | Object replacement | input, SAM2 mask, output, run metadata |
+| 3 | Background replacement | input, output, run metadata |
+| 4 | Add object by prompt | input, output, run metadata |
+| 5 | Add object by reference | target, reference, two masks, output, run metadata |
+| 6 | Prompt-based editing | input, output, run metadata |
+| 7 | Text-to-image | output and run metadata |
+| 8 | Outpainting | input, output, run metadata |
+| 9 | Upscaling | input, output, run metadata |
 
----
+The notebook uses a 768 px longest-side limit for OmniPaint target images and up to 2048 px for other image workflows. Reference images for OmniPaint are prepared separately. Selection points and placement boxes are drawn only on display copies, so overlays never enter model inference.
 
-## 11. Cấu trúc thư mục
+## 11. Project structure
 
-```
-ImageEditor/
-├── assets/                  # Ảnh demo (cat.jpg, cat2.jpg, ...)
+```text
+AIImageEditor/
+├── assets/                       demo source images
 ├── configs/
-│   └── default.yaml         # Cấu hình model mặc định
-├── frontend/                # Next.js frontend (React 19, TypeScript)
-│   ├── src/
-│   │   ├── app/             # Next.js App Router pages
-│   │   │   ├── page.tsx     # Landing page (/)
-│   │   │   └── studio/      # Studio page (/studio)
-│   │   ├── components/      # React components
-│   │   ├── hooks/           # Custom React hooks
-│   │   └── lib/
-│   │       └── api/
-│   │           ├── client.ts  # HTTP client gọi backend thật
-│   │           ├── mock.ts    # Mock API (offline)
-│   │           └── index.ts   # Chọn client/mock qua env var
-│   ├── .env.local           # Biến môi trường (gitignored)
-│   └── .env.local.example   # Template biến môi trường
-├── notebooks/               # Jupyter notebooks demo
-├── outputs/                 # Ảnh output (gitignored)
+│   └── default.yaml              model and memory configuration
+├── docs/assets/showcase/         versioned README gallery images
+├── frontend/                     Next.js application
+│   └── src/
+│       ├── app/                  App Router pages
+│       ├── components/           React components
+│       ├── hooks/                application hooks
+│       └── lib/api/              real and mock API clients
+├── notebooks/
+│   └── cv-showcase-all-modes.ipynb
+├── outputs/                      generated artifacts; gitignored
 ├── scripts/
-│   ├── run_api.py           # Khởi động FastAPI server
-│   ├── check_environment.py # Kiểm tra môi trường
-│   ├── smoke_test.py        # GPU smoke test
-│   └── install_omnipaint.py # Clone OmniPaint repo
-├── src/
-│   └── inpaint_core/        # Python package chính
-│       ├── api/             # FastAPI app + endpoints
-│       ├── backends/        # Các model backends (SAM2, FLUX, OmniPaint, ...)
-│       ├── operations/      # Business logic (remove, replace, ...)
-│       ├── models/          # ModelManager
-│       ├── processor.py     # ImageProcessor facade
-│       ├── config.py        # AppConfig dataclass
-│       └── testing/         # Fake backends cho testing
-├── tests/                   # Unit tests (pytest)
-├── weights/                 # Checkpoint Real-ESRGAN (tải về tự động; OmniPaint LoRA nằm trong HF cache, không phải đây)
-├── third_party/
-│   └── OmniPaint/           # OmniPaint source (clone bởi install_omnipaint.py)
-├── environment.yml          # Conda environment spec
-├── pyproject.toml           # Python project config
-└── GUIDE.md                 # File này
+│   ├── check_environment.py      dependency and CUDA validation
+│   ├── install_omnipaint.py      clone the OmniPaint source
+│   ├── run_api.py                launch FastAPI
+│   └── smoke_test.py             real-inference smoke tests
+├── src/inpaint_core/
+│   ├── api/                      FastAPI application and schemas
+│   ├── backends/                 SAM2, FLUX, OmniPaint, ESRGAN adapters
+│   ├── models/                   model lifecycle management
+│   ├── operations/               model-independent editing workflows
+│   ├── testing/                  fake implementations
+│   ├── config.py
+│   └── processor.py              public ImageProcessor facade
+├── tests/                        pytest suite
+├── third_party/OmniPaint/        installed separately; gitignored
+├── weights/                      downloaded Real-ESRGAN weights
+├── environment.yml
+├── README.md                     visual project overview
+├── TECHNICAL_REFERENCE.md        architecture and Python examples
+└── GUIDE.md                      this installation guide
 ```
 
----
-
-## 12. Các biến môi trường
+## 12. Environment variables
 
 ### Frontend (`frontend/.env.local`)
 
-| Biến | Mặc định | Mô tả |
+| Variable | Default | Description |
 |---|---|---|
-| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | URL của FastAPI backend |
-| `NEXT_PUBLIC_USE_MOCK_API` | `false` | Dùng `true` để offline mock, không cần backend |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | FastAPI base URL |
+| `NEXT_PUBLIC_USE_MOCK_API` | `false` | Use the frontend mock instead of HTTP |
 
-### Backend (shell environment)
+### Backend shell
 
-| Biến | Mô tả |
+| Variable | Description |
 |---|---|
-| `HF_TOKEN` | Hugging Face access token (cần cho các gated model) |
-| `INPAINT_API_CORS_ORIGINS` | Danh sách origins cho CORS, phân cách bởi dấu phẩy (mặc định: `http://localhost:3000`) |
+| `HF_TOKEN` | Hugging Face access token for gated checkpoints |
+| `INPAINT_API_CORS_ORIGINS` | Comma-separated allowed origins; defaults to `http://localhost:3000` |
 
----
+Never commit `.env.local`, access tokens, or local checkpoint paths.
 
-## 13. Xử lý lỗi thường gặp
+## 13. Troubleshooting
 
 ### OmniPaint source not found
 
-```
+```text
 FileNotFoundError: OmniPaint source not found: .../third_party/OmniPaint
 ```
 
-**Giải pháp:** Chạy lại:
+Install the upstream source:
 
 ```bash
 python scripts/install_omnipaint.py
 ```
 
-### Lỗi phiên bản library (diffusers, peft, v.v.)
+### Diffusers, PEFT, or other version conflicts
 
-**Giải pháp:** Đảm bảo đang dùng đúng conda environment và cập nhật:
+Confirm that `imageinpaint` is active and restore the pinned environment:
 
 ```bash
 conda activate imageinpaint
 conda env update -f environment.yml --prune
+pip install -e . --no-deps
 ```
+
+Do not run OmniPaint's upstream setup script in the same environment.
 
 ### CUDA out of memory
 
-**Giải pháp:** Trong `configs/default.yaml`:
-- Đặt `memory.policy: sequential` (giải phóng model trước khi tải model khác)
-- Giảm `omnipaint.max_image_side` xuống (ví dụ: `512`)
-- Bật `cpu_offload: true` cho tất cả models
+In `configs/default.yaml`:
 
-### Frontend không kết nối được backend
+- Set `memory.policy: sequential` so the current model is released before another backend loads.
+- Reduce OmniPaint's `max_image_side`, for example from 768 to 512.
+- Enable the supported CPU-offload option for large backends.
+- Test one mode per process while measuring the actual peak on the deployment GPU.
 
-Kiểm tra:
-1. Backend đang chạy tại `http://localhost:8000`
-2. `frontend/.env.local` có `NEXT_PUBLIC_API_URL=http://localhost:8000`
-3. Truy cập `http://localhost:8000/api/health` — phải trả về `{"status":"ok"}`
+### Frontend cannot connect to the backend
 
-### Lỗi pip check (dependency conflicts)
+Check the following:
 
-**Giải pháp:** Không mix pip và conda cho các package khoa học (numpy, scipy, opencv).
-Dùng Conda cho chúng như đã cấu hình trong `environment.yml`.
+1. `http://localhost:8000/api/health` returns `{"status":"ok"}`.
+2. `frontend/.env.local` contains `NEXT_PUBLIC_API_URL=http://localhost:8000`.
+3. `NEXT_PUBLIC_USE_MOCK_API` is `false` when using FastAPI.
+4. The frontend origin is included in `INPAINT_API_CORS_ORIGINS`.
+5. Restart Next.js after changing a `NEXT_PUBLIC_*` variable.
 
-### CUDA không nhận dạng trên Windows
+### Scientific-package conflicts
 
-**Giải pháp:** Cài PyTorch từ CUDA index riêng:
+Avoid mixing unrelated pip wheels with Conda packages for NumPy, SciPy, and OpenCV. Restore the versions in `environment.yml`, then rerun `scripts/check_environment.py`.
+
+### CUDA is not detected on Windows
+
+Install the native Windows build from the configured CUDA index, then validate it:
 
 ```bash
 pip install torch==2.14.0 torchvision==0.29.0 --index-url https://download.pytorch.org/whl/cu130
+python scripts/check_environment.py --require-cuda
 ```
 
----
-
-## Tóm tắt nhanh
+## Quick reference
 
 ```bash
-# ===== CÀI ĐẶT (một lần) =====
+# One-time setup
 conda env create -f environment.yml
 conda activate imageinpaint
 pip install git+https://github.com/facebookresearch/sam2.git
 pip install -e . --no-deps
 python scripts/install_omnipaint.py
-
 cd frontend && npm install && cd ..
 
-# ===== CHẠY DEV (fake backend, không cần GPU) =====
-# Terminal 1:
-conda activate imageinpaint && python scripts/run_api.py --fake
-# Terminal 2:
-cd frontend && npm run dev
-# Mo trinh duyet: http://localhost:3000
+# Development: terminal 1
+conda activate imageinpaint
+python scripts/run_api.py --fake
 
-# ===== CHẠY PRODUCTION (GPU thật) =====
-# Terminal 1:
-conda activate imageinpaint && python scripts/run_api.py --config configs/default.yaml
-# Terminal 2:
-cd frontend && npm run build && npm run start
+# Development: terminal 2
+cd frontend
+npm run dev
 
-# ===== KIỂM TRA =====
-python scripts/check_environment.py --require-cuda  # kiem tra moi truong
-python -m pytest -q                                  # unit tests
-python scripts/smoke_test.py --mode segment          # GPU smoke test
+# Real inference API
+conda activate imageinpaint
+python scripts/run_api.py --config configs/default.yaml
+
+# Verification
+python scripts/check_environment.py --require-cuda
+python -m pytest -q
+python scripts/smoke_test.py --mode segment
 ```

@@ -1,343 +1,203 @@
-# ImageEditor
+# AI Image Editor
 
-An extensible image-editing core with a thin `ImageProcessor` facade. Business
-operations are separated from model-specific code.
+**A local-first, multi-model image editing system that turns high-level editing intent into reproducible GPU workflows.**
 
-> For a step-by-step setup/run walkthrough (Vietnamese), see [GUIDE.md](GUIDE.md).
-> This README is the reference doc — if the two ever disagree, this one wins.
+The project exposes nine image generation and editing modes through one Python API, a FastAPI service, a Next.js studio, and a reproducible evaluation notebook. It orchestrates SAM2, OmniPaint, FLUX.1 Fill, FLUX.2 Klein, Real-ESRGAN, and optional GFPGAN behind a single `ImageProcessor` facade.
 
-## Architecture
+[Installation guide](GUIDE.md) · [Technical reference](TECHNICAL_REFERENCE.md) · [Showcase notebook](notebooks/cv-showcase-all-modes.ipynb)
+
+## See it in action
+
+### Background replacement
+
+The subject and composition are preserved while the scene is rebuilt from a natural-language instruction.
+
+| Processed input | Generated result |
+|:---:|:---:|
+| <img src="docs/assets/showcase/03-replace-background-input.png" alt="Portrait before background replacement" width="100%"> | <img src="docs/assets/showcase/03-replace-background-output.png" alt="Portrait in a generated office background" width="100%"> |
+
+### Reference-guided object insertion
+
+SAM2 extracts a subject from a reference image; OmniPaint inserts it into the requested target region.
+
+| Target and placement | Reference and selection | Result |
+|:---:|:---:|:---:|
+| <img src="docs/assets/showcase/05-add-object-reference-input.png" alt="Target landscape with placement box" width="100%"> | <img src="docs/assets/showcase/05-add-object-reference-reference.png" alt="Reference cat with selection point" width="100%"> | <img src="docs/assets/showcase/05-add-object-reference-output.png" alt="Cat inserted into the target landscape" width="100%"> |
+
+## Supported workflows
+
+| # | Workflow | Input | Core backend |
+|---:|---|---|---|
+| 1 | Object removal | Image + point/box selection | SAM2 + OmniPaint |
+| 2 | Object replacement | Image + selection + prompt | SAM2 + FLUX.1 Fill |
+| 3 | Background replacement | Image + prompt | FLUX.2 Klein 4B |
+| 4 | Add object by prompt | Image + prompt + optional placement | FLUX.2 Klein 4B |
+| 5 | Add object by reference | Target + reference + placement | SAM2 + OmniPaint |
+| 6 | Prompt-based editing | Image + instruction | FLUX.2 Klein 4B |
+| 7 | Text-to-image | Prompt + dimensions | FLUX.2 Klein 4B |
+| 8 | Outpainting | Image + margins + prompt | FLUX.1 Fill |
+| 9 | Upscaling | Image + scale/options | Real-ESRGAN, optional GFPGAN |
+
+## Results gallery
+
+All examples below were produced by [`cv-showcase-all-modes.ipynb`](notebooks/cv-showcase-all-modes.ipynb). Selection markers are visualization overlays on the processed inputs, not pixels sent to the generation backend.
+
+### 1. Object removal
+
+| Processed input | SAM2 mask | Result |
+|:---:|:---:|:---:|
+| <img src="docs/assets/showcase/01-remove-object-input.png" alt="Coffee table with selected phone" width="100%"> | <img src="docs/assets/showcase/01-remove-object-mask.png" alt="Phone segmentation mask" width="100%"> | <img src="docs/assets/showcase/01-remove-object-output.png" alt="Coffee table after phone removal" width="100%"> |
+
+### 2. Object replacement
+
+**Prompt:** “a golden retriever sitting in the same position”
+
+| Processed input | SAM2 mask | Result |
+|:---:|:---:|:---:|
+| <img src="docs/assets/showcase/02-replace-object-input.png" alt="Selected cat before replacement" width="100%"> | <img src="docs/assets/showcase/02-replace-object-mask.png" alt="Cat segmentation mask" width="100%"> | <img src="docs/assets/showcase/02-replace-object-output.png" alt="Cat replaced with a golden retriever" width="100%"> |
+
+### 3. Background replacement
+
+**Prompt:** “a bright modern creative office with soft window light and shallow depth of field”
+
+| Processed input | Result |
+|:---:|:---:|
+| <img src="docs/assets/showcase/03-replace-background-input.png" alt="Portrait with foliage background" width="100%"> | <img src="docs/assets/showcase/03-replace-background-output.png" alt="Portrait with office background" width="100%"> |
+
+### 4. Add object by prompt
+
+**Prompt:** “a single colorful hot-air balloon floating naturally in the open sky above the field”
+
+| Processed input | Result |
+|:---:|:---:|
+| <img src="docs/assets/showcase/04-add-object-prompt-input.png" alt="Landscape before prompt insertion" width="100%"> | <img src="docs/assets/showcase/04-add-object-prompt-output.png" alt="Landscape with generated hot-air balloon" width="100%"> |
+
+### 5. Add object by reference
+
+| Target | Placement mask | Reference mask | Result |
+|:---:|:---:|:---:|:---:|
+| <img src="docs/assets/showcase/05-add-object-reference-input.png" alt="Target and placement" width="100%"> | <img src="docs/assets/showcase/05-add-object-reference-placement-mask.png" alt="Placement mask" width="100%"> | <img src="docs/assets/showcase/05-add-object-reference-reference-mask.png" alt="Reference subject mask" width="100%"> | <img src="docs/assets/showcase/05-add-object-reference-output.png" alt="Reference-guided insertion result" width="100%"> |
+
+### 6. Prompt-based editing
+
+**Prompt:** “Restore this archival photograph with natural modern colors, neutral white balance, and realistic contrast while preserving every person, object, and the original composition”
+
+| Processed input | Result |
+|:---:|:---:|
+| <img src="docs/assets/showcase/06-prompt-edit-input.png" alt="Faded archival photograph" width="100%"> | <img src="docs/assets/showcase/06-prompt-edit-output.png" alt="Color-restored photograph" width="100%"> |
+
+### 7. Text-to-image
+
+**Prompt:** “A cinematic alpine lake at sunrise, mirror-like water, mist between mountains, realistic landscape photography, detailed natural lighting”
+
+<p align="center"><img src="docs/assets/showcase/07-text-to-image-output.png" alt="Generated cinematic mountain lake at sunrise" width="640"></p>
+
+### 8. Outpainting
+
+Extend 128px left side and 128px right side
+
+| Processed input | Extended result |
+|:---:|:---:|
+| <img src="docs/assets/showcase/08-outpainting-input.png" alt="Cat image before outpainting" width="100%"> | <img src="docs/assets/showcase/08-outpainting-output.png" alt="Cat image extended on both sides" width="100%"> |
+
+### 9. Upscaling
+
+The example doubles the spatial resolution from **512 × 341** to **1024 × 682**.
+
+| Processed input | 2× result |
+|:---:|:---:|
+| <img src="docs/assets/showcase/09-upscaling-input.png" alt="Low-resolution portrait input" width="100%"> | <img src="docs/assets/showcase/09-upscaling-output.png" alt="Two-times upscaled portrait" width="100%"> |
+
+## Reproducible GPU profile
+
+Each workflow records its processed image dimensions, wall-clock runtime, generation settings, backend, and CUDA peak memory. The values below come from one cold-start run per mode on an **NVIDIA L40S**; model loading is included, so they are reproducibility data rather than universal performance claims.
+
+| Workflow | Backend | Steps | Processed/output size | Time | Peak VRAM allocated |
+|---|---|---:|---:|---:|---:|
+| Object removal | OmniPaint | 28 | 768 × 512 | 77.3 s | 25,480 MB |
+| Object replacement | FLUX.1 Fill | default | 960 × 1282 | 86.4 s | 23,438 MB |
+| Background replacement | FLUX.2 Klein | 4 | 1280 × 853 | 31.4 s | 9,164 MB |
+| Add by prompt | FLUX.2 Klein | 4 | 1920 × 1440 | 15.7 s | 9,507 MB |
+| Add by reference | OmniPaint | 28 | 458 × 670 | 71.8 s | 26,574 MB |
+| Prompt edit | FLUX.2 Klein | 4 | 1920 × 1311 | 35.3 s | 9,386 MB |
+| Text-to-image | FLUX.2 Klein | 4 | 1024 × 1024 | 11.8 s | 7,997 MB |
+| Outpainting | FLUX.1 Fill | default | 831 × 768 | 608.2 s | 23,575 MB |
+| Upscaling | Real-ESRGAN | — | 1024 × 682 | 0.63 s | 1,652 MB |
+
+Runtime and memory vary with hardware, resolution, checkpoint cache state, and library versions. OmniPaint target images use a 768 px longest-side profile; other image workflows can preprocess up to 2048 px.
+
+## How it is built
 
 ```text
-ImageProcessor
-  -> operations/                 what the user wants to do
-       object_removal            -> OmniPaint
-       object_replacement        -> FLUX Fill
-       background_replacement    -> FLUX.2 Klein 4B direct edit
-       object_insertion          -> FLUX.2 Klein 4B / OmniPaint
-       prompt_edit               -> FLUX.2 Klein 4B direct edit
-       generation                -> FLUX.2 Klein 4B
-       outpainting               -> FLUX Fill
-       upscaling                 -> Real-ESRGAN
-  -> backends/                   how a specific model is called
-  -> ModelManager                lazy load, resident/sequential lifecycle
+Next.js studio
+      │ JSON + base64 PNG
+      ▼
+FastAPI endpoints
+      ▼
+ImageProcessor facade
+      ├── operations/   user-facing editing semantics
+      ├── backends/     model-specific adapters
+      └── ModelManager  lazy loading and GPU lifecycle
+             ├── SAM2
+             ├── OmniPaint
+             ├── FLUX.1 Fill
+             ├── FLUX.2 Klein 4B
+             └── Real-ESRGAN / GFPGAN
 ```
 
-`backends/protocols.py` contains structural interfaces, not abstract parent
-classes. Backends do not inherit from them. This keeps operations replaceable
-and easy to unit-test with fake implementations.
+The separation between operations and model adapters keeps the public API stable while allowing backends to be replaced or tested with lightweight fakes. A sequential memory policy can release the active model before loading the next one, while a resident policy keeps loaded backends available.
 
-| # | Mode | Backend |
-|---:|---|---|
-| 1 | Object Removal | SAM2 + OmniPaint Removal |
-| 2 | Object Replacement | SAM2 + FLUX.1 Fill |
-| 3 | Background Replacement | FLUX.2 Klein 4B direct image editing |
-| 4 | Add Object by Prompt | FLUX.2 Klein 4B direct image editing |
-| 5 | Add Object by Reference | OmniPaint Insertion |
-| 6 | Prompt-based Editing | FLUX.2 Klein 4B direct image editing |
-| 7 | Outpainting | FLUX.1 Fill |
-| 8 | Text-to-Image | FLUX.2 Klein 4B |
-| 9 | Upscaling | Real-ESRGAN; optional GFPGAN face enhancement |
+## Quick start
 
-Masked diffusion receives the complete preprocessed image, padded to a multiple
-of `processing.size_multiple`. Cropping and automatic preprocessing inside
-`ImageProcessor` are disabled. Compositing is also disabled: masked operations
-return the model's complete generated image after padding is removed.
-
-## Setup
+### Backend
 
 ```bash
-conda env create -f environment.yml || conda env update -f environment.yml --prune
+conda env create -f environment.yml
 conda activate imageinpaint
 pip install -e . --no-deps
 pip install git+https://github.com/facebookresearch/sam2.git
+python scripts/install_omnipaint.py
 python scripts/check_environment.py --require-cuda
 ```
 
-`third_party/OmniPaint` is gitignored, not vendored — clone the official
-OmniPaint repository there with `python scripts/install_omnipaint.py`
-(run once; it errors if the directory already exists). FLUX and OmniPaint
-repositories may require Hugging Face access approval and an authenticated
-`HF_TOKEN`.
-
-Do **not** run `third_party/OmniPaint/scripts/setup.sh` inside this environment.
-That upstream script pins Diffusers 0.31 and PEFT 0.10, while this project uses
-Diffusers 0.37.1 for `Flux2KleinPipeline`. `environment.yml` instead pins one
-compatibility set for both integrations, and `check_environment.py` verifies
-the exact APIs after installation. NumPy, SciPy, and OpenCV are
-kept on Conda Forge to avoid mixing incompatible compiled wheels.
-The project backend also installs a small runtime shim for an internal
-Diffusers symbol that moved after OmniPaint was released.
-
-With `artifacts.prefetch_on_init: true`, `ImageProcessor.from_config()` first
-downloads the configured checkpoints to the local Hugging Face cache and
-Real-ESRGAN to `weights/`. It does not construct pipelines or move weights to
-RAM/GPU yet. For OmniPaint, text-encoder files are skipped because the model
-uses packaged static embeddings. The first operation using a backend performs
-the separate in-memory load.
-
-## HTTP API (frontend integration)
-
-`src/inpaint_core/api/` wraps `ImageProcessor` in a FastAPI app so the Next.js
-frontend (`frontend/`) can call it over HTTP instead of importing the Python
-package directly. Images/masks travel as base64 `data:image/png;base64,...`
-strings in JSON, matching how the frontend already stores them.
+Run the API with fake backends for UI development:
 
 ```bash
-# No GPU / no checkpoints — in-memory fake backends. This is what
-# `frontend/` talks to by default in local dev (NEXT_PUBLIC_API_URL).
 python scripts/run_api.py --fake
+```
 
-# Real inference — same config used by ImageProcessor.from_config().
+Or run real inference with the configured checkpoints:
+
+```bash
 python scripts/run_api.py --config configs/default.yaml
 ```
 
-Endpoints: `POST /api/segment`, `/api/remove-object`, `/api/replace-object`,
-`/api/replace-background`, `/api/add-object/prompt`, `/api/add-object/reference`,
-`/api/prompt-edit`, `/api/generate`, `/api/outpaint`, `/api/upscale`, and
-`GET /api/health`. CORS defaults to `http://localhost:3000`
-(`INPAINT_API_CORS_ORIGINS`, comma-separated, to add more origins).
+### Frontend
 
-On the frontend side, `frontend/src/lib/api/index.ts` picks between the real
-client (`client.ts`) and an offline mock (`mock.ts`) via
-`NEXT_PUBLIC_USE_MOCK_API` — see `frontend/.env.local.example`.
-
-`tests/test_api.py` exercises every endpoint through FastAPI's `TestClient`
-against `inpaint_core.testing.build_fake_processor()`, so the HTTP contract
-is covered by `pytest` without GPU hardware.
-
-## Notebook examples
-
-Run the setup cell once. It prepares the input and obtains one reusable object
-mask with SAM2. The eight operation cells below assume this cell has run.
-
-### Setup cell
-
-```python
-from pathlib import Path
-
-from IPython.display import display
-from PIL import Image
-
-from inpaint_core import (
-    BoxPrompt,
-    GenerationOptions,
-    ImageProcessor,
-    OutpaintMargins,
-    PointPrompt,
-    UpscaleOptions,
-    preprocess_image,
-    preprocess_image_only,
-)
-
-root = Path.cwd()
-if root.name == "notebooks":
-    root = root.parent
-
-processor = ImageProcessor.from_config(root / "configs" / "default.yaml")
-
-raw_image = preprocess_image_only(root / "assets" / "cat.jpg")
-selection = PointPrompt(
-    points=[(raw_image.shape[1] / 2, raw_image.shape[0] / 2)],
-    labels=[1],
-)
-omnipaint_max_side = int(processor.config.omnipaint.options["max_image_side"])
-image, selection = preprocess_image(
-    raw_image,
-    selection,
-    # The shared demo image is also used by OmniPaint modes.
-    max_side=min(processor.config.processing.max_image_side, omnipaint_max_side),
-)
-
-segmentation = processor.segment(image, selection)
-object_mask = segmentation.best_mask
-
-output_dir = root / "outputs" / "notebook"
-output_dir.mkdir(parents=True, exist_ok=True)
-
-
-def show_and_save(result, filename):
-    output_path = output_dir / filename
-    Image.fromarray(result.image).save(output_path)
-    display(Image.fromarray(result.image))
-    print(output_path)
-
-
-display(Image.fromarray(image))
-display(Image.fromarray(object_mask))
+```bash
+cd frontend
+npm install
+npm run dev
 ```
 
-### Cell 1 — Object Removal · OmniPaint
-
-```python
-removed = processor.remove_object(
-    image,
-    mask=object_mask,
-)
-show_and_save(removed, "01-object-removal.png")
-```
-
-### Cell 2 — Object Replacement · FLUX Fill
-
-```python
-replaced = processor.replace_object(
-    image,
-    "a golden retriever sitting in the same position",
-    mask=object_mask,
-)
-show_and_save(replaced, "02-object-replacement.png")
-```
-
-### Cell 3 — Background Replacement · FLUX.2 Klein 4B
-
-```python
-background = processor.replace_background(
-    image,
-    (
-        "a busy modern office with desks, computer monitors, chairs, and "
-        "workers in the distance, natural indoor lighting"
-    ),
-    generation_options=GenerationOptions(
-        seed=123,
-        num_inference_steps=4,
-        guidance_scale=1.0,
-    ),
-)
-
-show_and_save(background, "03-background-replacement.png")
-```
-
-### Cell 4 — Add Object · Prompt hoặc Reference Image
-
-Add by prompt uses FLUX.2 Klein direct editing. `placement` is converted into
-a natural-language location/size hint; it is not a hard pixel mask:
-
-```python
-placement = BoxPrompt(
-    x1=image.shape[1] * 0.05,
-    y1=image.shape[0] * 0.55,
-    x2=image.shape[1] * 0.30,
-    y2=image.shape[0] * 0.90,
-)
-
-inserted_prompt = processor.add_object_by_prompt(
-    image,
-    "a small red ball resting naturally on the ground",
-    placement=placement,
-    generation_options=GenerationOptions(seed=42, num_inference_steps=4),
-)
-show_and_save(inserted_prompt, "04a-add-object-prompt.png")
-```
-
-Add by reference uses OmniPaint. Replace `assets/cat2.jpg` with another
-reference image when needed:
-
-```python
-raw_reference = preprocess_image_only(root / "assets" / "cat2.jpg")
-reference_selection = PointPrompt(
-    points=[(raw_reference.shape[1] / 2, raw_reference.shape[0] / 2)],
-    labels=[1],
-)
-reference, reference_selection = preprocess_image(
-    raw_reference,
-    reference_selection,
-    max_side=512,
-)
-reference_mask = processor.segment(reference, reference_selection).best_mask
-
-inserted_reference = processor.add_object_by_reference(
-    image,
-    reference,
-    placement=placement,
-    reference_mask=reference_mask,
-)
-show_and_save(inserted_reference, "04b-add-object-reference.png")
-```
-
-### Cell 5 — Prompt Edit · FLUX.2 Klein 4B
-
-```python
-edited = processor.prompt_edit(
-    image,
-    "Turn the scene into winter while preserving the composition",
-    generation_options=GenerationOptions(seed=42, num_inference_steps=4),
-)
-show_and_save(edited, "05-prompt-edit.png")
-```
-
-### Cell 6 — Text-to-Image · FLUX.2 Klein 4B
-
-```python
-generated = processor.generate_image(
-    "A cinematic mountain lake at sunrise, realistic photography",
-    width=1024,
-    height=1024,
-    generation_options=GenerationOptions(seed=42, num_inference_steps=4),
-)
-show_and_save(generated, "06-generate-image.png")
-```
-
-### Cell 7 — Outpainting · FLUX Fill
-
-```python
-extended = processor.outpaint(
-    image,
-    "Continue the original scene naturally on both sides",
-    OutpaintMargins(left=128, right=128),
-)
-show_and_save(extended, "07-outpaint.png")
-```
-
-### Cell 8 — Upscaling · Real-ESRGAN
-
-```python
-upscaled = processor.upscale(
-    image,
-    options=UpscaleOptions(scale=4, tile=512),
-)
-show_and_save(upscaled, "08-upscale.png")
-```
-
-Optional cleanup and memory report:
-
-```python
-processor.save_memory_stats(root / "outputs" / "memory.json")
-processor.release_models()
-```
-
-For reference insertion, `reference_mask` removes the reference background
-before OmniPaint receives the subject. Placement should preferably be one
-connected mask or box.
-
-## Memory policy
-
-- `sequential`: loading a new backend releases all currently registered models.
-- `resident`: every loaded backend remains registered until `release_models()`.
-
-Model placement and offload remain backend-specific. `ModelManager` owns model
-lifetime, but does not know how Diffusers, SAM2, or Real-ESRGAN perform inference.
-
-OmniPaint has a separate 32 GB-oriented profile: its target image is limited to
-768 px on the longest side (the upstream maximum is 1024), text encoders are
-not loaded, static prompt embeddings stay on CPU while idle, and regular BF16
-weights use model CPU offload. Pipeline-level bitsandbytes INT8 is disabled for
-OmniPaint because loading its LoRAs can leave quantized parameters on the meta
-device, while its custom transformer forward also bypasses Diffusers' normal
-offload hook. Available VRAM still depends on image size, CUDA allocator
-behavior, and library versions. Verify the actual peak via
-`save_memory_stats()` on the deployment GPU.
+Open `http://localhost:3000/studio`. For environment variables, gated-model access, production commands, and platform notes, follow the [installation and usage guide](GUIDE.md).
 
 ## Verification
 
 ```bash
+# CPU-safe contract and unit tests with fake backends
 python -m pytest -q
-```
 
-Unit tests use fake backends and do not download checkpoints. Real GPU inference
-should be tested one mode at a time with `memory.policy: sequential`.
-
-```bash
+# Real-GPU smoke tests
 python scripts/smoke_test.py --mode segment
-python scripts/smoke_test.py --mode remove
 python scripts/smoke_test.py --mode all --reference assets/cat2.jpg
 ```
+
+The FastAPI contract is tested across every endpoint without downloading model weights. Real inference can be validated one mode at a time with the sequential memory policy.
+
+## Documentation
+
+- [Installation and usage guide](GUIDE.md)
+- [Architecture, API examples, and memory policy](TECHNICAL_REFERENCE.md)
+- [Nine-mode showcase and profiling notebook](notebooks/cv-showcase-all-modes.ipynb)
+- [Frontend-specific notes](frontend/README.md)
