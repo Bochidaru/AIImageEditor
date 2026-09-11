@@ -4,7 +4,7 @@
 
 The project exposes nine image generation and editing modes through one Python API, a FastAPI service, a Next.js studio, and a reproducible evaluation notebook. It orchestrates SAM2, OmniPaint, FLUX.1 Fill, FLUX.2 Klein, Real-ESRGAN, and optional GFPGAN behind a single `ImageProcessor` facade.
 
-[Installation guide](GUIDE.md) · [Technical reference](TECHNICAL_REFERENCE.md) · [Showcase notebook](notebooks/cv-showcase-all-modes.ipynb)
+[Installation guide](GUIDE.md) · [Showcase notebook](notebooks/cv-showcase-all-modes.ipynb)
 
 ## See it in action
 
