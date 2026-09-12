@@ -115,13 +115,13 @@ Each workflow records its processed image dimensions, wall-clock runtime, genera
 | Workflow | Backend | Steps | Processed/output size | Time | Peak VRAM allocated |
 |---|---|---:|---:|---:|---:|
 | Object removal | OmniPaint | 28 | 768 × 512 | 77.3 s | 25,480 MB |
-| Object replacement | FLUX.1 Fill | default | 960 × 1282 | 86.4 s | 23,438 MB |
+| Object replacement | FLUX.1 Fill | 28 | 960 × 1282 | 86.4 s | 23,438 MB |
 | Background replacement | FLUX.2 Klein | 4 | 1280 × 853 | 31.4 s | 9,164 MB |
 | Add by prompt | FLUX.2 Klein | 4 | 1920 × 1440 | 15.7 s | 9,507 MB |
 | Add by reference | OmniPaint | 28 | 458 × 670 | 71.8 s | 26,574 MB |
 | Prompt edit | FLUX.2 Klein | 4 | 1920 × 1311 | 35.3 s | 9,386 MB |
 | Text-to-image | FLUX.2 Klein | 4 | 1024 × 1024 | 11.8 s | 7,997 MB |
-| Outpainting | FLUX.1 Fill | default | 831 × 768 | 608.2 s | 23,575 MB |
+| Outpainting | FLUX.1 Fill | 28 | 831 × 768 | 608.2 s | 23,575 MB |
 | Upscaling | Real-ESRGAN | — | 1024 × 682 | 0.63 s | 1,652 MB |
 
 Runtime and memory vary with hardware, resolution, checkpoint cache state, and library versions. OmniPaint target images use a 768 px longest-side profile; other image workflows can preprocess up to 2048 px.
@@ -164,6 +164,5 @@ Open `http://localhost:3000/studio`. For environment variables, gated-model acce
 ## Documentation
 
 - [Installation and usage guide](GUIDE.md)
-- [Architecture, API examples, and memory policy](TECHNICAL_REFERENCE.md)
 - [Nine-mode showcase and profiling notebook](notebooks/cv-showcase-all-modes.ipynb)
 - [Frontend-specific notes](frontend/README.md)
